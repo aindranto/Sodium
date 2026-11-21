@@ -198,6 +198,7 @@ function render() {
 
 async function switchTo(s) {
   if (disabled.has(s.id)) return;
+  if (linkPopupOpen) await closeLinkPopup();
   if (allPanels.some(p => !p.hidden)) await closePanels();
   activeId = s.id; render();
   el("activeName").textContent = s.name;
@@ -422,6 +423,55 @@ el("iconRemoveImg").addEventListener("click", async () => {
   delete iconTarget.img;
   store.save(services); render();
   await closePanels();
+});
+
+// ---------------------------------------------------------------------------
+// Link popup
+//
+// Links inside a service that ask for a new window (target=_blank,
+// window.open) are denied by Rust and reported here as a "link-clicked"
+// event instead. The UI shows the link bar and asks Rust to open the
+// popup webview floating over the active service.
+// ---------------------------------------------------------------------------
+const linkBar = el("linkBar");
+let linkPopupOpen = false;
+let currentLink = "";
+window.__TAURI__.event.listen("link-clicked", async (e) => {
+  const url = String(e.payload || "");
+  if (!url) return;
+  currentLink = url;
+  el("linkUrlText").textContent = url;
+  el("linkUrlText").title = url;
+  el("linkCopy").textContent = "Salin link";
+  linkBar.hidden = false;
+  linkPopupOpen = true;
+  try { await invoke("open_link_popup", { url }); }
+  catch { /* popup failed to open; the bar still offers copy / external */ }
+});
+async function closeLinkPopup() {
+  if (!linkPopupOpen) return;
+  linkPopupOpen = false;
+  linkBar.hidden = true;
+  await invoke("close_link_popup");
+}
+el("linkClose").addEventListener("click", closeLinkPopup);
+el("linkExternal").addEventListener("click", async () => {
+  if (currentLink) { try { await invoke("open_external", { url: currentLink }); } catch { /* ignore */ } }
+  closeLinkPopup();
+});
+el("linkCopy").addEventListener("click", async () => {
+  if (!currentLink) return;
+  try { await navigator.clipboard.writeText(currentLink); }
+  catch {
+    const ta = document.createElement("textarea");
+    ta.value = currentLink;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  el("linkCopy").textContent = "Tersalin ✓";
+  setTimeout(() => { el("linkCopy").textContent = "Salin link"; }, 1500);
 });
 
 // Keyboard shortcuts: Ctrl/Cmd + 1..9
