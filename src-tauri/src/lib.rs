@@ -1,7 +1,8 @@
 
 use std::collections::HashSet;
 use std::sync::Mutex;
-use tauri::{LogicalPosition, LogicalSize, Manager, State, WebviewBuilder, WebviewUrl, WindowEvent};
+use tauri::webview::{WebviewBuilder, WebviewUrl};
+use tauri::{LogicalPosition, LogicalSize, Manager, State, WindowEvent};
 
 /// Width of the sidebar rendered by the main window's own UI (ui/index.html).
 const SIDEBAR_W: f64 = 76.0;
@@ -54,7 +55,7 @@ fn switch_service(
     url: String,
 ) -> Result<(), String> {
     let label = label_for(&id);
-    let window = app.get_window("main").ok_or("main window missing")?;
+    let window = app.get_webview_window("main").ok_or("main window missing")?;
 
     // Create the target if it is not alive yet.
     if app.get_webview(&label).is_none() {
@@ -156,7 +157,7 @@ pub fn run() {
             // Keep service webviews filling the area right of the sidebar.
             if let WindowEvent::Resized(_) = event {
                 let app = window.app_handle();
-                if let Some(main) = app.get_window("main") {
+                if let Some(main) = app.get_webview_window("main") {
                     let (pos, size) = service_bounds(&main);
                     for wv in app.webviews().values() {
                         if wv.label().starts_with("service-") {
