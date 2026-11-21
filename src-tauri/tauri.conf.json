@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sodium",
+  "version": "0.1.0",
+  "identifier": "id.sodium.desktop",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Sodium",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "SocialNetworking",
+    "shortDescription": "All your social & messaging services in one place - the light way.",
+    "longDescription": "Sodium is a clean-room, lightweight rebuild of the Ferdium concept: every service you add, only one (or your pinned ones) alive at a time, so RAM stays flat no matter how many services you register."
+  }
+}
