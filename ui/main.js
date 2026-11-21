@@ -47,10 +47,16 @@ const store = {
     catch { return new Set(); }
   },
   savePinned(set) { localStorage.setItem("sodium.pinned", JSON.stringify([...set])); },
+  disabled() {
+    try { return new Set(JSON.parse(localStorage.getItem("sodium.disabled") || "[]")); }
+    catch { return new Set(); }
+  },
+  saveDisabled(set) { localStorage.setItem("sodium.disabled", JSON.stringify([...set])); },
 };
 
 let services = store.load();
 let pinned = store.pinned();
+let disabled = store.disabled();
 let activeId = null;
 
 const nav = document.getElementById("services");
@@ -152,8 +158,8 @@ function render() {
   nav.innerHTML = "";
   for (const s of services) {
     const b = document.createElement("button");
-    b.className = "svc" + (s.id === activeId ? " active" : "");
-    b.title = s.name + (pinned.has(s.id) ? " (pinned - tetap hidup)" : "");
+    b.className = "svc" + (s.id === activeId ? " active" : "") + (disabled.has(s.id) ? " disabled" : "");
+    b.title = s.name + (pinned.has(s.id) ? " (pinned - tetap hidup)" : "") + (disabled.has(s.id) ? " (nonaktif — klik untuk mengaktifkan lagi)" : "");
     if (s.img) {
       const im = document.createElement("img");
       im.className = "svcImg"; im.src = s.img; im.alt = "";
@@ -165,12 +171,25 @@ function render() {
     if (pinned.has(s.id)) {
       const p = document.createElement("span"); p.className = "pin"; p.textContent = "📌"; b.appendChild(p);
     }
-    b.addEventListener("click", () => switchTo(s));
+    b.addEventListener("click", async () => {
+      if (disabled.has(s.id)) {
+        // Disabled services cannot be opened; a click opens the menu
+        // where "Aktifkan lagi" lives, so the way back is one click away.
+        ctxService = s;
+        el("ctxTitle").textContent = s.name;
+        el("ctxPin").textContent = pinned.has(s.id) ? "Unpin" : "Pin (tetap hidup buat notif)";
+        el("ctxDisable").textContent = "Aktifkan lagi";
+        await openPanel(ctxPanel);
+        return;
+      }
+      switchTo(s);
+    });
     b.addEventListener("contextmenu", async (e) => {
       e.preventDefault();
       ctxService = s;
       el("ctxTitle").textContent = s.name;
       el("ctxPin").textContent = pinned.has(s.id) ? "Unpin" : "Pin (tetap hidup buat notif)";
+      el("ctxDisable").textContent = disabled.has(s.id) ? "Aktifkan lagi" : "Nonaktifkan (matikan total sementara)";
       await openPanel(ctxPanel);
     });
     nav.appendChild(b);
@@ -178,6 +197,7 @@ function render() {
 }
 
 async function switchTo(s) {
+  if (disabled.has(s.id)) return;
   if (allPanels.some(p => !p.hidden)) await closePanels();
   activeId = s.id; render();
   el("activeName").textContent = s.name;
@@ -328,12 +348,35 @@ function refreshIconPanelImg() {
   el("iconRemoveImg").hidden = !has;
   if (has) el("iconPreview").src = iconTarget.img;
 }
+el("ctxDisable").addEventListener("click", async () => {
+  if (!ctxService) return;
+  const id = ctxService.id;
+  if (disabled.has(id)) {
+    // Re-enable only: the webview is created on the next click, and the
+    // login session is still on disk, so no re-login is needed.
+    disabled.delete(id);
+  } else {
+    // Disable = destroy the webview completely (RAM freed, nothing runs),
+    // but keep the profile folder: cookies/session survive on disk.
+    disabled.add(id);
+    await invoke("close_service", { id });
+    if (activeId === id) {
+      activeId = null;
+      el("activeName").textContent = "Sodium";
+      el("welcome").style.display = "block";
+    }
+  }
+  store.saveDisabled(disabled);
+  render();
+  await closePanels();
+});
 el("ctxDelete").addEventListener("click", async () => {
   if (!ctxService) return;
   const id = ctxService.id;
   services = services.filter(x => x.id !== id);
   store.save(services);
   if (pinned.has(id)) { pinned.delete(id); store.savePinned(pinned); }
+  if (disabled.has(id)) { disabled.delete(id); store.saveDisabled(disabled); }
   if (activeId === id) activeId = null;
   await invoke("close_service", { id });
   render();
