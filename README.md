@@ -1,43 +1,50 @@
 # Sodium (Na)
 
-> All your social & messaging services in one place — **the light way.**
+> Semua layanan sosial & chat lo dalam satu tempat — **dengan cara yang ringan.**
 
-**Sodium** is a lightweight rebuild of the [Ferdium](https://github.com/ferdium/ferdium-app) concept, created because Ferdium (Electron) is hungry: ~200 MB for the shell alone, plus 150-250 MB for *every* service you keep open.
+**Sodium** adalah pembangunan ulang konsep [Ferdium](https://github.com/ferdium/ferdium-app) dalam versi jauh lebih ringan, dibuat karena Ferdium (Electron) rakus RAM: ~200 MB untuk cangkangnya saja, plus 150–250 MB untuk *setiap* layanan yang lo biarkan terbuka.
 
-The name: Ferdium is named like a chemical element — so its lighter sibling is **Sodium**, an actual element (`Na`) and one of the lightest metals. **So**dium for **So**cial.
+Namanya: Ferdium dinamai seperti unsur kimia — jadi adik ringannya adalah **Sodium**, unsur beneran (`Na`) dan salah satu logam paling ringan. **So**dium untuk **So**cial.
 
-> Sodium is a clean-room reimplementation inspired by Ferdium's idea, not a fork of its code.
+> Sodium adalah reimplementasi *clean-room* yang terinspirasi ide Ferdium, bukan fork dari kodenya.
 
-## Why is Sodium lighter?
+## Kenapa Sodium lebih ringan?
 
-Switching frameworks alone does not fix RAM on Windows (WebView2 is Chromium too — one WhatsApp Web page costs what it costs). Sodium's saving comes from its architecture:
+Ganti framework saja tidak menyelesaikan soal RAM di Windows (WebView2 juga Chromium — satu halaman WhatsApp Web biayanya ya segitu). Hematnya Sodium datang dari arsitekturnya:
 
-1. **Tauri 2 + the OS webview** instead of a bundled Chromium — installer ~5-15 MB, shell RAM in the tens of MB.
-You can register **unlimited services** (WhatsApp is preinstalled; add any other site as a custom URL). Sodium's rule is about how many are *alive*, not how many you may register:
+1. **Tauri 2 + webview bawaan OS** ketimbang Chromium yang dibundel — installer cuma ~2 MB, RAM cangkang hanya puluhan MB.
 
-2. **How many webviews stay alive is your setting** (sidebar: *Hidup bareng* — 1 / 2 / 3 / 5 / ∞, default 1). Switching past the limit *destroys* the least-recently-used webview (it does not just hide it). Register 10 services, pay for the number you chose. Pinned services are exempt from eviction.
-3. **Pinned services are the exception** — pin WhatsApp and it stays alive for notifications while you use something else.
-4. **Sessions persist on disk** per service (own profile folder), so a destroyed service comes back still logged in — it just reloads (1-3 s).
-5. **No internal server, no database, no recipes system for hundreds of services.** Config is local; services are just URLs you add yourself.
+Lo bisa mendaftarkan **layanan tanpa batas** (WhatsApp terpasang dari awal; layanan lain tinggal pilih dari katalog atau tambah sebagai custom URL). Aturan Sodium bukan soal berapa yang boleh didaftarkan, tapi berapa yang *hidup*:
 
-Target platform: **Windows** (WebView2, preinstalled on Windows 11). Realistic target (6 services registered): **~250-350 MB total**, vs ~1.1-1.7 GB in Ferdium with all 6 alive.
+2. **Berapa webview yang tetap hidup adalah settingan lo** (bar atas: *Hidup bareng* — 1 / 2 / 3 / 5 / ∞, bawaan 1). Berpindah melebihi batas akan *memusnahkan* webview yang paling lama tidak dipakai (bukan sekadar menyembunyikannya). Daftarkan 10 layanan, bayar RAM cuma sejumlah pilihan lo. Layanan yang di-pin bebas dari pemusnahan.
+3. **Layanan yang di-pin adalah pengecualian** — pin WhatsApp dan dia tetap hidup untuk notifikasi selama lo memakai layanan lain.
+4. **Sesi tersimpan di disk** per layanan (folder profil masing-masing), jadi layanan yang dimusnahkan kembali dalam keadaan tetap login — hanya perlu memuat ulang (1–3 detik).
+5. **Tidak ada server internal, tidak ada database, tidak ada sistem recipes untuk ratusan layanan.** Konfigurasi bersifat lokal; layanan hanyalah URL yang lo tambahkan sendiri.
 
-Full analysis of Ferdium's source and the design trade-offs: [docs/BLUEPRINT.md](docs/BLUEPRINT.md)
+Platform target: **Windows** (WebView2, sudah terpasang di Windows 11). Target realistis (6 layanan terdaftar): **~250–350 MB total**, dibanding ~1,1–1,7 GB di Ferdium dengan 6 layanan hidup semua.
 
-## Status
+Analisis lengkap source Ferdium dan pertimbangan desainnya: [docs/BLUEPRINT.md](docs/BLUEPRINT.md)
 
-v0.1.0 — initial scaffold. Ships with **WhatsApp** as the one default service; every other service is added by the user as a custom URL. Sidebar + service switching with destroy-on-switch, pinned services, per-service persistent profiles, Ctrl+1..9 shortcuts. Not yet: unread badges, tray, notifications bridge, auto-update.
+## Fitur
 
-## Develop
+- **Picker layanan** ala Ferdium saat pertama dibuka (dan lewat tombol "+"): 21 layanan populer tinggal klik, bisa pilih banyak sekaligus, ada pencarian; custom URL tetap tersedia.
+- **Ikon custom per layanan**: emoji + warna khas dari katalog, bisa diganti lewat palet emoji, teks bebas, atau **upload gambar sendiri** (.jpg / .jpeg / .png / .ico).
+- **Bar atas**: nama layanan aktif, **zoom** tampilan layanan (50%–200%, tersimpan), dan setting *Hidup bareng*.
+- **Pin** layanan agar selalu hidup (mis. WhatsApp untuk notifikasi), **nonaktifkan** layanan untuk mematikannya total sementara tanpa kehilangan login, dan shortcut **Ctrl+1..9** untuk berpindah layanan.
+- Notifikasi situs bisa diaktifkan (Sodium menjawab permintaan izin notifikasi dengan benar).
 
-Requirements: [Rust](https://www.rust-lang.org/tools/install), Node 20+, and on Windows the WebView2 runtime (preinstalled on Windows 11), on Linux `webkit2gtk`.
+Belum ada: badge pesan belum dibaca, tray, jembatan notifikasi native, auto-update.
+
+## Cara mengembangkan
+
+Persyaratan: [Rust](https://www.rust-lang.org/tools/install), Node 20+, dan di Windows runtime WebView2 (sudah terpasang di Windows 11), di Linux `webkit2gtk`.
 
 ```bash
 npm install
 npm run dev     # tauri dev
-npm run build   # tauri build -> installer in src-tauri/target/release/bundle
+npm run build   # tauri build -> installer di src-tauri/target/release/bundle
 ```
 
-## License
+## Lisensi
 
-MIT. Concept inspired by Ferdium (Apache-2.0) — thank you to the Ferdium community.
+MIT. Konsep terinspirasi Ferdium (Apache-2.0) — terima kasih untuk komunitas Ferdium.
