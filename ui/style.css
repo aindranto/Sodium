@@ -4,7 +4,7 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 #sidebar{position:fixed;left:0;top:0;bottom:0;width:76px;background:#1b1e24;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:8px;z-index:10}
 #logo{width:44px;height:44px;border-radius:12px;background:#f5c518;color:#14161a;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:6px}
 #services{display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1}
-.svc{width:48px;height:48px;border-radius:14px;border:2px solid transparent;background:#262a33;color:#e8eaf0;font-size:15px;font-weight:700;cursor:pointer;position:relative}
+.svc{width:48px;height:48px;border-radius:14px;border:2px solid transparent;background:#262a33;color:#e8eaf0;font-size:18px;font-weight:700;cursor:pointer;position:relative}
 .svc:hover{background:#2f3441}
 .svc.active{border-color:#f5c518;background:#2f3441}
 .svc .pin{position:absolute;top:-4px;right:-4px;font-size:10px}
@@ -23,6 +23,34 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 .btnPrimary{background:#f5c518;color:#14161a}
 .btnGhost{background:#262a33;color:#e8eaf0}
 .btnDanger{background:#5a2326;color:#f0b4b8}
+
+.picker{position:fixed;left:92px;right:16px;top:16px;bottom:16px;background:#1b1e24;color:#e8eaf0;border:1px solid #333947;border-radius:16px;padding:20px;z-index:30;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.picker[hidden]{display:none}
+.pickerHead{display:flex;gap:12px;align-items:center;justify-content:space-between}
+.pickerHead h3{margin:0;font-size:18px}
+#pickerSearch{flex:0 1 280px;padding:9px;border-radius:8px;border:1px solid #333947;background:#14161a;color:#e8eaf0}
+.pickerGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;overflow-y:auto;margin:16px 0;padding-right:4px}
+.tile{position:relative;background:#262a33;border:2px solid transparent;border-radius:14px;padding:14px 6px 10px;color:#e8eaf0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px}
+.tile:hover{background:#2f3441}
+.tile.selected{border-color:#f5c518}
+.tile.added{opacity:.45;cursor:default}
+.tileIcon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px}
+.tileName{font-size:12px;font-weight:600;text-align:center}
+.tileBadge{position:absolute;top:6px;right:6px;font-size:9px;background:#14161a;color:#9aa3b5;padding:2px 6px;border-radius:99px}
+.pickerCustom{border-top:1px solid #333947;padding-top:12px}
+.pickerCustom h4{margin:0 0 8px;font-size:13px;color:#9aa3b5}
+.customRow{display:flex;gap:8px;flex-wrap:wrap}
+.customRow input{flex:1 1 140px;padding:9px;border-radius:8px;border:1px solid #333947;background:#14161a;color:#e8eaf0}
+.customRow .iconInput{flex:0 0 76px;text-align:center}
+.customRow button{padding:8px 14px;border-radius:8px;border:0;font-weight:700;cursor:pointer}
+.palette{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.palette button{width:36px;height:36px;border-radius:10px;border:1px solid #333947;background:#262a33;font-size:18px;cursor:pointer}
+.palette button:hover{background:#2f3441}
+.pickerFoot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.pickerFoot button{padding:8px 14px;border-radius:8px;border:0;font-weight:700;cursor:pointer}
+#addSelected:disabled{opacity:.4;cursor:default}
+#iconPanel label{display:block;margin:12px 0;font-size:13px;color:#9aa3b5}
+#iconPanel input{display:block;width:100%;margin-top:4px;padding:9px;border-radius:8px;border:1px solid #333947;background:#14161a;color:#e8eaf0}
 
 #maxAliveWrap{font-size:9px;color:#5c6373;text-align:center;display:flex;flex-direction:column;gap:4px;align-items:center}
 #maxAlive{background:#262a33;color:#e8eaf0;border:1px solid #333947;border-radius:8px;padding:4px 6px;font-size:12px}
