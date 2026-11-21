@@ -19,6 +19,12 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 .zoomCtl button:hover{background:#2f3441}
 #zoomLabel{min-width:54px;font-size:12px}
 .topAlive{font-size:11px;color:#9aa3b5;display:flex;align-items:center;gap:6px}
+#linkBar{position:fixed;left:76px;right:0;top:44px;height:40px;background:#20242d;border-bottom:1px solid #333947;display:flex;align-items:center;gap:12px;padding:0 12px;z-index:9}
+#linkBar[hidden]{display:none}
+#linkUrlText{flex:1;font-size:12px;color:#9aa3b5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.linkBtns{display:flex;gap:6px}
+.linkBtns button{background:#262a33;color:#e8eaf0;border:1px solid #333947;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer}
+.linkBtns button:hover{background:#2f3441}
 #welcome{margin-left:76px;margin-top:44px;padding:48px;max-width:640px}
 #welcome h1{font-size:40px;margin:0 0 8px}
 .muted{color:#9aa3b5;line-height:1.55}
