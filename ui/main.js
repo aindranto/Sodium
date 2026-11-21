@@ -112,6 +112,39 @@ function buildPalette(container, onPick) {
   }
 }
 
+// Read a user-picked icon image (.jpg/.jpeg/.png/.ico) and return a data
+// URL small enough to keep in localStorage. Raster images are downscaled
+// to a 96x96 square (cover-crop) as PNG; .ico files are stored as-is
+// (they are already tiny icon containers, and canvas cannot reliably
+// decode them) with a size cap.
+function processIconFile(file) {
+  return new Promise((resolve, reject) => {
+    const name = (file.name || "").toLowerCase();
+    const isIco = name.endsWith(".ico") || file.type.includes("icon");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      if (isIco) {
+        if (dataUrl.length > 700 * 1024) return reject(new Error("File .ico kegedean (maks ~500 KB)."));
+        return resolve(dataUrl);
+      }
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas");
+        c.width = 96; c.height = 96;
+        const ctx = c.getContext("2d");
+        const side = Math.min(img.width, img.height);
+        ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 96, 96);
+        resolve(c.toDataURL("image/png"));
+      };
+      img.onerror = () => reject(new Error("Gambar nggak bisa dibaca."));
+      img.src = dataUrl;
+    };
+    reader.onerror = () => reject(new Error("File nggak bisa dibaca."));
+    reader.readAsDataURL(file);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Sidebar
 // ---------------------------------------------------------------------------
@@ -121,8 +154,14 @@ function render() {
     const b = document.createElement("button");
     b.className = "svc" + (s.id === activeId ? " active" : "");
     b.title = s.name + (pinned.has(s.id) ? " (pinned - tetap hidup)" : "");
-    b.textContent = s.icon || s.name.slice(0, 2);
-    if (s.color) b.style.background = s.color;
+    if (s.img) {
+      const im = document.createElement("img");
+      im.className = "svcImg"; im.src = s.img; im.alt = "";
+      b.appendChild(im);
+    } else {
+      b.textContent = s.icon || s.name.slice(0, 2);
+      if (s.color) b.style.background = s.color;
+    }
     if (pinned.has(s.id)) {
       const p = document.createElement("span"); p.className = "pin"; p.textContent = "📌"; b.appendChild(p);
     }
@@ -141,6 +180,7 @@ function render() {
 async function switchTo(s) {
   if (allPanels.some(p => !p.hidden)) await closePanels();
   activeId = s.id; render();
+  el("activeName").textContent = s.name;
   el("welcome").style.display = "none";
   try {
     await invoke("switch_service", { id: s.id, url: s.url });
@@ -224,7 +264,25 @@ addSelectedBtn.addEventListener("click", async () => {
 });
 
 // Custom URL form inside the picker
-buildPalette(el("customPalette"), (e) => { el("cIcon").value = e; });
+buildPalette(el("customPalette"), (e) => { el("cIcon").value = e; clearCustomImg(); });
+let customImg = null;
+function clearCustomImg() {
+  customImg = null;
+  el("cIconPreview").hidden = true;
+  el("cIconPreview").removeAttribute("src");
+}
+el("cUploadBtn").addEventListener("click", () => el("cIconFile").click());
+el("cIconPreview").addEventListener("click", clearCustomImg);
+el("cIconFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    customImg = await processIconFile(f);
+    el("cIconPreview").src = customImg;
+    el("cIconPreview").hidden = false;
+  } catch { /* unreadable file: keep the text icon */ }
+});
 el("customAdd").addEventListener("click", async () => {
   const name = el("cName").value.trim();
   let url = el("cUrl").value.trim();
@@ -232,9 +290,12 @@ el("customAdd").addEventListener("click", async () => {
   if (!name || !url) return;
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
   const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + Date.now().toString(36);
-  services.push({ id, name, url, icon: icon || name.slice(0, 2) });
+  const svc = { id, name, url, icon: icon || name.slice(0, 2) };
+  if (customImg) svc.img = customImg;
+  services.push(svc);
   store.save(services); render();
   el("cName").value = ""; el("cUrl").value = ""; el("cIcon").value = "";
+  clearCustomImg();
   markOnboarded();
   await closePanels();
 });
@@ -256,8 +317,17 @@ el("ctxIcon").addEventListener("click", async () => {
   iconTarget = ctxService;
   el("iconTitle").textContent = "Ganti ikon — " + ctxService.name;
   el("iconText").value = "";
+  el("iconMsg").textContent = "";
+  refreshIconPanelImg();
   await openPanel(iconPanel);
 });
+
+function refreshIconPanelImg() {
+  const has = !!(iconTarget && iconTarget.img);
+  el("iconPreview").hidden = !has;
+  el("iconRemoveImg").hidden = !has;
+  if (has) el("iconPreview").src = iconTarget.img;
+}
 el("ctxDelete").addEventListener("click", async () => {
   if (!ctxService) return;
   const id = ctxService.id;
@@ -275,16 +345,36 @@ el("ctxClose").addEventListener("click", closePanels);
 buildPalette(el("iconPalette"), async (e) => {
   if (!iconTarget) return;
   iconTarget.icon = e;
+  delete iconTarget.img;
   store.save(services); render();
   await closePanels();
 });
 el("iconSave").addEventListener("click", async () => {
   if (!iconTarget) return;
   const v = el("iconText").value.trim();
-  if (v) { iconTarget.icon = v; store.save(services); render(); }
+  if (v) { iconTarget.icon = v; delete iconTarget.img; store.save(services); render(); }
   await closePanels();
 });
 el("iconCancel").addEventListener("click", closePanels);
+el("iconUploadBtn").addEventListener("click", () => el("iconFile").click());
+el("iconFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f || !iconTarget) return;
+  try {
+    iconTarget.img = await processIconFile(f);
+    store.save(services); render();
+    await closePanels();
+  } catch (err) {
+    el("iconMsg").textContent = String(err && err.message || err);
+  }
+});
+el("iconRemoveImg").addEventListener("click", async () => {
+  if (!iconTarget) return;
+  delete iconTarget.img;
+  store.save(services); render();
+  await closePanels();
+});
 
 // Keyboard shortcuts: Ctrl/Cmd + 1..9
 window.addEventListener("keydown", (e) => {
@@ -292,6 +382,22 @@ window.addEventListener("keydown", (e) => {
     const s = services[Number(e.key) - 1]; if (s) switchTo(s);
   }
 });
+
+// Zoom for the service view (browser-style page zoom), persisted and
+// pushed into Rust, which applies it to every service webview and to
+// webviews created later.
+const ZOOM_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+let zoomIdx = ZOOM_STEPS.indexOf(parseFloat(localStorage.getItem("sodium.zoom") || "1"));
+if (zoomIdx < 0) zoomIdx = ZOOM_STEPS.indexOf(1.0);
+function applyZoom() {
+  el("zoomLabel").textContent = Math.round(ZOOM_STEPS[zoomIdx] * 100) + "%";
+  localStorage.setItem("sodium.zoom", String(ZOOM_STEPS[zoomIdx]));
+  invoke("set_zoom_level", { scale: ZOOM_STEPS[zoomIdx] });
+}
+el("zoomIn").addEventListener("click", () => { if (zoomIdx < ZOOM_STEPS.length - 1) { zoomIdx++; applyZoom(); } });
+el("zoomOut").addEventListener("click", () => { if (zoomIdx > 0) { zoomIdx--; applyZoom(); } });
+el("zoomLabel").addEventListener("click", () => { zoomIdx = ZOOM_STEPS.indexOf(1.0); applyZoom(); });
+applyZoom();
 
 // "Hidup bareng" setting: how many non-pinned services may stay alive.
 // Stored locally, pushed into the Rust side on startup and on change.
