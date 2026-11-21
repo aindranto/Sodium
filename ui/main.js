@@ -27,6 +27,31 @@ let activeId = null;
 const nav = document.getElementById("services");
 const { invoke } = window.__TAURI__.core;
 
+// ---------------------------------------------------------------------------
+// Panels (add service / right-click menu)
+//
+// Service webviews are NATIVE controls layered on top of this UI webview,
+// so any panel rendered here would sit *behind* e.g. the WhatsApp webview
+// and look like the button does nothing. While a panel is open we ask Rust
+// to hide the service webviews (hide, not destroy: sessions stay alive).
+// ---------------------------------------------------------------------------
+const addPanel = document.getElementById("addPanel");
+const ctxPanel = document.getElementById("ctxPanel");
+let ctxService = null;
+
+async function openPanel(panel) {
+  addPanel.hidden = true;
+  ctxPanel.hidden = true;
+  await invoke("set_services_visible", { visible: false });
+  panel.hidden = false;
+}
+
+async function closePanels() {
+  addPanel.hidden = true;
+  ctxPanel.hidden = true;
+  await invoke("set_services_visible", { visible: true });
+}
+
 function render() {
   nav.innerHTML = "";
   for (const s of services) {
@@ -38,23 +63,19 @@ function render() {
       const p = document.createElement("span"); p.className = "pin"; p.textContent = "📌"; b.appendChild(p);
     }
     b.addEventListener("click", () => switchTo(s));
-    b.addEventListener("contextmenu", (e) => {
+    b.addEventListener("contextmenu", async (e) => {
       e.preventDefault();
-      const choice = prompt(`${s.name}\nKetik: pin = pin/unpin (tetap hidup buat notif)\nhapus = hapus layanan`, "");
-      if (choice === "pin") {
-        pinned.has(s.id) ? pinned.delete(s.id) : pinned.add(s.id);
-        store.savePinned(pinned);
-        invoke("set_pinned", { id: s.id, pinned: pinned.has(s.id) });
-        render();
-      } else if (choice === "hapus") {
-        services = services.filter(x => x.id !== s.id); store.save(services); render();
-      }
+      ctxService = s;
+      document.getElementById("ctxTitle").textContent = s.name;
+      document.getElementById("ctxPin").textContent = pinned.has(s.id) ? "Unpin" : "Pin (tetap hidup buat notif)";
+      await openPanel(ctxPanel);
     });
     nav.appendChild(b);
   }
 }
 
 async function switchTo(s) {
+  if (!addPanel.hidden || !ctxPanel.hidden) await closePanels();
   activeId = s.id; render();
   document.getElementById("welcome").style.display = "none";
   try {
@@ -64,23 +85,53 @@ async function switchTo(s) {
     console.log("Sodium alive webviews:", alive);
   } catch (err) {
     document.getElementById("welcome").style.display = "block";
-    alert("Gagal membuka " + s.name + ": " + err);
+    document.getElementById("ramNote").textContent = "Gagal membuka " + s.name + ": " + err;
   }
 }
 
-// Add-service dialog
-const dlg = document.getElementById("addDialog");
-document.getElementById("addBtn").addEventListener("click", () => dlg.showModal());
-document.getElementById("saveService").addEventListener("click", (e) => {
+// Add-service panel
+document.getElementById("addBtn").addEventListener("click", async () => {
+  await openPanel(addPanel);
+  document.getElementById("fName").focus();
+});
+document.getElementById("cancelService").addEventListener("click", closePanels);
+document.getElementById("saveService").addEventListener("click", async () => {
   const name = document.getElementById("fName").value.trim();
-  const url = document.getElementById("fUrl").value.trim();
+  let url = document.getElementById("fUrl").value.trim();
   const icon = document.getElementById("fIcon").value.trim();
   if (!name || !url) return;
-  e.preventDefault(); dlg.close();
+  if (!/^https?:\/\//i.test(url)) url = "https://" + url;
   const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + Date.now().toString(36);
   services.push({ id, name, url, icon: icon || name.slice(0, 2) });
   store.save(services); render();
+  document.getElementById("fName").value = "";
+  document.getElementById("fUrl").value = "";
+  document.getElementById("fIcon").value = "";
+  await closePanels();
 });
+
+// Right-click panel actions
+document.getElementById("ctxPin").addEventListener("click", async () => {
+  if (!ctxService) return;
+  const nowPinned = !pinned.has(ctxService.id);
+  if (nowPinned) pinned.add(ctxService.id); else pinned.delete(ctxService.id);
+  store.savePinned(pinned);
+  invoke("set_pinned", { id: ctxService.id, pinned: nowPinned });
+  render();
+  await closePanels();
+});
+document.getElementById("ctxDelete").addEventListener("click", async () => {
+  if (!ctxService) return;
+  const id = ctxService.id;
+  services = services.filter(x => x.id !== id);
+  store.save(services);
+  if (pinned.has(id)) { pinned.delete(id); store.savePinned(pinned); }
+  if (activeId === id) activeId = null;
+  await invoke("close_service", { id });
+  render();
+  await closePanels();
+});
+document.getElementById("ctxClose").addEventListener("click", closePanels);
 
 // Keyboard shortcuts: Ctrl/Cmd + 1..9
 window.addEventListener("keydown", (e) => {
