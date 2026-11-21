@@ -65,7 +65,7 @@ fn switch_service(
             .join("profiles")
             .join(&id);
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-        let parsed: tauri::Url = url.parse().map_err(|e: tauri::Error| e.to_string())?;
+        let parsed: tauri::Url = url.parse().map_err(|e| e.to_string())?;
         let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
             .data_directory(data_dir);
         let (pos, size) = service_bounds(&window);
