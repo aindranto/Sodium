@@ -1,11 +1,13 @@
-
 use std::collections::HashSet;
 use std::sync::Mutex;
-use tauri::webview::{WebviewBuilder, WebviewUrl};
-use tauri::{LogicalPosition, LogicalSize, Manager, State, WindowEvent};
+use tauri::webview::WebviewBuilder;
+use tauri::{LogicalPosition, LogicalSize, Manager, State, WebviewUrl, WindowEvent};
 
-/// Width of the sidebar rendered by the main window's own UI (ui/index.html).
+/// Width of the sidebar rendered by Sodium's own UI (ui/index.html).
 const SIDEBAR_W: f64 = 76.0;
+
+/// Label of the webview that renders Sodium's own UI inside the main window.
+const UI_LABEL: &str = "ui";
 
 #[derive(Default)]
 struct AppState {
@@ -18,6 +20,10 @@ struct AppState {
     /// the same time. 1 = lightest (default). 0 = unlimited (Ferdium-like,
     /// RAM grows with every service opened).
     max_alive: Mutex<usize>,
+    /// The main window, created in the setup hook as a plain `tauri::Window`
+    /// (not a WebviewWindow) because only `Window` can host child webviews
+    /// via `add_child`.
+    main_window: Mutex<Option<tauri::Window>>,
 }
 
 fn label_for(id: &str) -> String {
@@ -28,15 +34,26 @@ fn id_from_label(label: &str) -> &str {
     label.trim_start_matches("service-")
 }
 
-/// Size/position a service webview should occupy: everything right of the sidebar.
-fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f64>) {
-    let size = window.inner_size().unwrap_or(tauri::PhysicalSize { width: 1280, height: 800 });
+fn logical_inner_size(window: &tauri::Window) -> LogicalSize<f64> {
+    let size = window
+        .inner_size()
+        .unwrap_or(tauri::PhysicalSize { width: 1280, height: 800 });
     let scale = window.scale_factor().unwrap_or(1.0);
-    let w = (size.width as f64 / scale).max(SIDEBAR_W + 100.0);
-    let h = size.height as f64 / scale;
+    LogicalSize::new(size.width as f64 / scale, size.height as f64 / scale)
+}
+
+/// Bounds for Sodium's own UI webview: the full window.
+fn full_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f64>) {
+    (LogicalPosition::new(0.0, 0.0), logical_inner_size(window))
+}
+
+/// Bounds for a service webview: everything right of the sidebar.
+fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f64>) {
+    let size = logical_inner_size(window);
+    let w = size.width.max(SIDEBAR_W + 100.0);
     (
         LogicalPosition::new(SIDEBAR_W, 0.0),
-        LogicalSize::new(w - SIDEBAR_W, h),
+        LogicalSize::new(w - SIDEBAR_W, size.height),
     )
 }
 
@@ -47,15 +64,23 @@ fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<
 /// least-recently-used non-pinned webview is *destroyed* (not hidden), so
 /// its RAM is actually freed. Sessions persist because each service gets
 /// its own data_directory on disk (cookies / localStorage survive a destroy).
+///
+/// This command is `async` on purpose: creating a webview from a synchronous
+/// command can deadlock on Windows (documented Webview2 issue).
 #[tauri::command]
-fn switch_service(
+async fn switch_service(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: String,
     url: String,
 ) -> Result<(), String> {
     let label = label_for(&id);
-    let window = app.get_webview_window("main").ok_or("main window missing")?;
+    let window = state
+        .main_window
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("main window missing")?;
 
     // Create the target if it is not alive yet.
     if app.get_webview(&label).is_none() {
@@ -66,7 +91,7 @@ fn switch_service(
             .join("profiles")
             .join(&id);
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-        let parsed: tauri::Url = url.parse().map_err(|e| e.to_string())?;
+        let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
         let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
             .data_directory(data_dir);
         let (pos, size) = service_bounds(&window);
@@ -147,6 +172,23 @@ pub fn run() {
             max_alive: Mutex::new(1),
             ..Default::default()
         })
+        .setup(|app| {
+            // The main window is built here as a plain `tauri::Window`
+            // (tauri.conf.json declares no windows) because only `Window`
+            // supports `add_child`; a config-created window is a
+            // WebviewWindow, which cannot host service webviews.
+            let window = tauri::window::WindowBuilder::new(app, "main")
+                .title("Sodium")
+                .inner_size(1280.0, 800.0)
+                .min_inner_size(900.0, 600.0)
+                .build()?;
+            let size = window.inner_size()?;
+            let ui_builder = WebviewBuilder::new(UI_LABEL, WebviewUrl::App("index.html".into()));
+            window.add_child(ui_builder, LogicalPosition::new(0.0, 0.0), size)?;
+            let state = app.state::<AppState>();
+            *state.main_window.lock().unwrap() = Some(window);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             switch_service,
             set_pinned,
@@ -154,16 +196,21 @@ pub fn run() {
             alive_services
         ])
         .on_window_event(|window, event| {
-            // Keep service webviews filling the area right of the sidebar.
+            // Keep the UI and service webviews filling the main window.
+            if window.label() != "main" {
+                return;
+            }
             if let WindowEvent::Resized(_) = event {
                 let app = window.app_handle();
-                if let Some(main) = app.get_webview_window("main") {
-                    let (pos, size) = service_bounds(&main);
-                    for wv in app.webviews().values() {
-                        if wv.label().starts_with("service-") {
-                            let _ = wv.set_position(pos);
-                            let _ = wv.set_size(size);
-                        }
+                let (ui_pos, ui_size) = full_bounds(window);
+                let (pos, size) = service_bounds(window);
+                for wv in app.webviews().values() {
+                    if wv.label() == UI_LABEL {
+                        let _ = wv.set_position(ui_pos);
+                        let _ = wv.set_size(ui_size);
+                    } else if wv.label().starts_with("service-") {
+                        let _ = wv.set_position(pos);
+                        let _ = wv.set_size(size);
                     }
                 }
             }
