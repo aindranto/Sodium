@@ -1,0 +1,38 @@
+name: Build Sodium
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm install
+      - name: Generate app icon (512x512 "Na" tile)
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $bmp = New-Object System.Drawing.Bitmap 512,512
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.Clear([System.Drawing.Color]::FromArgb(245,197,24))
+          $font = New-Object System.Drawing.Font "Arial", 200, ([System.Drawing.FontStyle]::Bold)
+          $brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(20,22,26))
+          $g.DrawString("Na", $font, $brush, 60, 130)
+          $bmp.Save("app-icon.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $g.Dispose(); $bmp.Dispose()
+          npx tauri icon app-icon.png
+      - uses: tauri-apps/tauri-action@v0
+        with:
+          args: '--bundles nsis,msi'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sodium-windows
+          path: |
+            src-tauri/target/release/bundle/**
+            src-tauri/target/release/sodium*
+          if-no-files-found: ignore
