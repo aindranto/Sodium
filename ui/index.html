@@ -31,18 +31,25 @@
     <p class="muted" id="ramNote"></p>
   </main>
 
-  <dialog id="addDialog">
-    <form method="dialog" id="addForm">
-      <h3>Tambah layanan</h3>
-      <label>Nama <input id="fName" required placeholder="mis. WhatsApp 2"/></label>
-      <label>URL <input id="fUrl" required placeholder="https://..."/></label>
-      <label>Ikon (1-2 huruf / emoji) <input id="fIcon" maxlength="2" placeholder="W"/></label>
-      <menu>
-        <button value="cancel" formnovalidate>Batal</button>
-        <button id="saveService" value="default">Simpan</button>
-      </menu>
-    </form>
-  </dialog>
+  <div id="addPanel" class="panel" hidden>
+    <h3>Tambah layanan</h3>
+    <label>Nama <input id="fName" placeholder="mis. Instagram"/></label>
+    <label>URL <input id="fUrl" placeholder="https://..."/></label>
+    <label>Ikon (1-2 huruf / emoji) <input id="fIcon" maxlength="2" placeholder="Ig"/></label>
+    <div class="panelBtns">
+      <button id="cancelService" class="btnGhost">Batal</button>
+      <button id="saveService" class="btnPrimary">Simpan</button>
+    </div>
+  </div>
+
+  <div id="ctxPanel" class="panel" hidden>
+    <h3 id="ctxTitle">Layanan</h3>
+    <div class="panelBtns col">
+      <button id="ctxPin" class="btnPrimary">Pin (tetap hidup buat notif)</button>
+      <button id="ctxDelete" class="btnDanger">Hapus layanan</button>
+      <button id="ctxClose" class="btnGhost">Tutup</button>
+    </div>
+  </div>
 
 <script src="main.js"></script>
 </body>
