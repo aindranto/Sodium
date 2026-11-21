@@ -203,7 +203,11 @@ async function switchTo(s) {
   el("activeName").textContent = s.name;
   el("welcome").style.display = "none";
   try {
+    // Push this service's own zoom first: Rust stores it and applies it
+    // when the webview is created (or right away if it already exists).
+    await invoke("set_service_zoom", { id: s.id, scale: zoomFor(s.id) });
     await invoke("switch_service", { id: s.id, url: s.url });
+    showZoom();
     const alive = await invoke("alive_services");
     el("ramNote").textContent = "";
     console.log("Sodium alive webviews:", alive);
@@ -364,6 +368,7 @@ el("ctxDisable").addEventListener("click", async () => {
       activeId = null;
       el("activeName").textContent = "Sodium";
       el("welcome").style.display = "block";
+      showZoom();
     }
   }
   store.saveDisabled(disabled);
@@ -426,21 +431,36 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-// Zoom for the service view (browser-style page zoom), persisted and
-// pushed into Rust, which applies it to every service webview and to
-// webviews created later.
+// Zoom for the service view (browser-style page zoom), remembered PER
+// SERVICE: WhatsApp can sit at 125% while Gmail stays at 100%. The old
+// single "sodium.zoom" value remains as the default for services that
+// have never been adjusted individually.
 const ZOOM_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
-let zoomIdx = ZOOM_STEPS.indexOf(parseFloat(localStorage.getItem("sodium.zoom") || "1"));
-if (zoomIdx < 0) zoomIdx = ZOOM_STEPS.indexOf(1.0);
-function applyZoom() {
-  el("zoomLabel").textContent = Math.round(ZOOM_STEPS[zoomIdx] * 100) + "%";
-  localStorage.setItem("sodium.zoom", String(ZOOM_STEPS[zoomIdx]));
-  invoke("set_zoom_level", { scale: ZOOM_STEPS[zoomIdx] });
+function getDefaultZoom() { return parseFloat(localStorage.getItem("sodium.zoom") || "1") || 1; }
+let zoomByService = {};
+try { zoomByService = JSON.parse(localStorage.getItem("sodium.zoomByService") || "{}"); } catch { zoomByService = {}; }
+function zoomFor(id) { return (id && zoomByService[id]) || getDefaultZoom(); }
+function zoomIdxFor(id) {
+  const i = ZOOM_STEPS.indexOf(zoomFor(id));
+  return i < 0 ? ZOOM_STEPS.indexOf(1.0) : i;
 }
-el("zoomIn").addEventListener("click", () => { if (zoomIdx < ZOOM_STEPS.length - 1) { zoomIdx++; applyZoom(); } });
-el("zoomOut").addEventListener("click", () => { if (zoomIdx > 0) { zoomIdx--; applyZoom(); } });
-el("zoomLabel").addEventListener("click", () => { zoomIdx = ZOOM_STEPS.indexOf(1.0); applyZoom(); });
-applyZoom();
+function showZoom() { el("zoomLabel").textContent = Math.round(zoomFor(activeId) * 100) + "%"; }
+async function setZoomIdx(idx) {
+  const scale = ZOOM_STEPS[idx];
+  if (activeId) {
+    zoomByService[activeId] = scale;
+    localStorage.setItem("sodium.zoomByService", JSON.stringify(zoomByService));
+    await invoke("set_service_zoom", { id: activeId, scale });
+  } else {
+    // No service open: the buttons adjust the default for new services.
+    localStorage.setItem("sodium.zoom", String(scale));
+  }
+  showZoom();
+}
+el("zoomIn").addEventListener("click", () => { const i = zoomIdxFor(activeId); if (i < ZOOM_STEPS.length - 1) setZoomIdx(i + 1); });
+el("zoomOut").addEventListener("click", () => { const i = zoomIdxFor(activeId); if (i > 0) setZoomIdx(i - 1); });
+el("zoomLabel").addEventListener("click", () => setZoomIdx(ZOOM_STEPS.indexOf(1.0)));
+showZoom();
 
 // "Hidup bareng" setting: how many non-pinned services may stay alive.
 // Stored locally, pushed into the Rust side on startup and on change.
