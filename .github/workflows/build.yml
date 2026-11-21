@@ -29,6 +29,12 @@ jobs:
           $bmp.Save("app-icon.png", [System.Drawing.Imaging.ImageFormat]::Png)
           $g.Dispose(); $bmp.Dispose()
           npx tauri icon app-icon.png
+          if (!(Test-Path "src-tauri/icons/icon.ico") -and (Test-Path "icons/icon.ico")) {
+            New-Item -ItemType Directory -Force "src-tauri/icons" | Out-Null
+            Copy-Item "icons/*" "src-tauri/icons/" -Force
+          }
+          if (!(Test-Path "src-tauri/icons/icon.ico")) { throw "icon.ico not found in src-tauri/icons after generation" }
+          Get-ChildItem "src-tauri/icons" | Select-Object Name
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
