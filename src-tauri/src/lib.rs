@@ -144,6 +144,35 @@ async fn switch_service(
     Ok(())
 }
 
+/// Hide or show all alive service webviews. Used while a UI panel (add
+/// service / right-click menu) is open: service webviews are native
+/// controls layered *above* the UI webview, so a panel rendered by the UI
+/// would be hidden behind e.g. WhatsApp and its buttons unclickable.
+/// Hiding is not destroying: sessions and state stay alive.
+#[tauri::command]
+fn set_services_visible(app: tauri::AppHandle, visible: bool) {
+    for wv in app.webviews().values() {
+        if wv.label().starts_with("service-") {
+            if visible {
+                let _ = wv.show();
+            } else {
+                let _ = wv.hide();
+            }
+        }
+    }
+}
+
+/// Destroy one service's webview and forget it (used when the user
+/// deletes the service from the sidebar).
+#[tauri::command]
+fn close_service(app: tauri::AppHandle, state: State<'_, AppState>, id: String) {
+    let label = label_for(&id);
+    if let Some(wv) = app.get_webview(&label) {
+        let _ = wv.close();
+    }
+    state.alive_mru.lock().unwrap().retain(|l| l != &label);
+}
+
 #[tauri::command]
 fn set_pinned(state: State<'_, AppState>, id: String, pinned: bool) {
     let mut set = state.pinned.lock().unwrap();
@@ -191,6 +220,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             switch_service,
+            set_services_visible,
+            close_service,
             set_pinned,
             set_max_alive,
             alive_services
