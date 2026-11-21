@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use tauri::webview::{PermissionKind, PermissionResponse, WebviewBuilder};
 use tauri::{LogicalPosition, LogicalSize, Manager, State, WebviewUrl, WindowEvent};
@@ -24,9 +24,10 @@ struct AppState {
     /// the same time. 1 = lightest (default). 0 = unlimited (Ferdium-like,
     /// RAM grows with every service opened).
     max_alive: Mutex<usize>,
-    /// Browser-style page zoom for service webviews (1.0 = 100%), applied
-    /// to alive webviews on change and to new webviews on creation.
-    zoom: Mutex<f64>,
+    /// Browser-style page zoom per service (service id -> scale,
+    /// 1.0 = 100%). Each service remembers its own zoom; services without
+    /// an entry use 100%.
+    zoom: Mutex<HashMap<String, f64>>,
     /// Label of the service webview currently shown. Alive service
     /// webviews are stacked native controls, so exactly one may be
     /// visible at a time: this one.
@@ -117,9 +118,10 @@ async fn switch_service(
         let _ = wv.set_focus();
     }
 
-    // Apply the user's zoom level to the (possibly just created) webview.
+    // Apply this service's own zoom level to the (possibly just created)
+    // webview.
     if let Some(wv) = app.get_webview(&label) {
-        let z = *state.zoom.lock().unwrap();
+        let z = state.zoom.lock().unwrap().get(&id).copied().unwrap_or(1.0);
         let _ = wv.set_zoom(z);
     }
 
@@ -229,15 +231,14 @@ fn set_max_alive(state: State<'_, AppState>, max: usize) {
     *state.max_alive.lock().unwrap() = max;
 }
 
-/// Set the page zoom for service webviews (1.0 = 100%). Stored so newly
-/// created webviews get it too, and applied to all alive service webviews.
+/// Set the page zoom for one service (1.0 = 100%). Stored per service so
+/// a newly created webview gets its own service's zoom, and applied at
+/// once when that service's webview is already alive.
 #[tauri::command]
-fn set_zoom_level(app: tauri::AppHandle, state: State<'_, AppState>, scale: f64) {
-    *state.zoom.lock().unwrap() = scale;
-    for wv in app.webviews().values() {
-        if wv.label().starts_with("service-") {
-            let _ = wv.set_zoom(scale);
-        }
+fn set_service_zoom(app: tauri::AppHandle, state: State<'_, AppState>, id: String, scale: f64) {
+    state.zoom.lock().unwrap().insert(id.clone(), scale);
+    if let Some(wv) = app.get_webview(&label_for(&id)) {
+        let _ = wv.set_zoom(scale);
     }
 }
 
@@ -251,7 +252,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
             max_alive: Mutex::new(1),
-            zoom: Mutex::new(1.0),
+            zoom: Mutex::new(HashMap::new()),
             ..Default::default()
         })
         .setup(|app| {
@@ -286,7 +287,7 @@ pub fn run() {
             close_service,
             set_pinned,
             set_max_alive,
-            set_zoom_level,
+            set_service_zoom,
             alive_services
         ])
         .on_window_event(|window, event| {
