@@ -16,6 +16,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "category": "SocialNetworking",
     "shortDescription": "All your social & messaging services in one place - the light way.",
     "longDescription": "Sodium is a clean-room, lightweight rebuild of the Ferdium concept: every service you add, only one (or your pinned ones) alive at a time, so RAM stays flat no matter how many services you register."
