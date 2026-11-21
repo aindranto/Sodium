@@ -13,12 +13,16 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 #welcome{margin-left:76px;padding:48px;max-width:640px}
 #welcome h1{font-size:40px;margin:0 0 8px}
 .muted{color:#9aa3b5;line-height:1.55}
-dialog{background:#1b1e24;color:#e8eaf0;border:1px solid #333947;border-radius:14px;padding:20px;min-width:320px}
-dialog label{display:block;margin:12px 0;font-size:13px;color:#9aa3b5}
-dialog input{display:block;width:100%;margin-top:4px;padding:9px;border-radius:8px;border:1px solid #333947;background:#14161a;color:#e8eaf0}
-dialog menu{display:flex;justify-content:flex-end;gap:8px;padding:0;margin:16px 0 0}
-dialog button{padding:8px 14px;border-radius:8px;border:0;background:#f5c518;color:#14161a;font-weight:700;cursor:pointer}
-dialog button[value=cancel]{background:#262a33;color:#e8eaf0}
+.panel{position:fixed;left:92px;top:16px;width:320px;background:#1b1e24;color:#e8eaf0;border:1px solid #333947;border-radius:14px;padding:20px;z-index:30;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.panel h3{margin:0 0 6px}
+.panel label{display:block;margin:12px 0;font-size:13px;color:#9aa3b5}
+.panel input{display:block;width:100%;margin-top:4px;padding:9px;border-radius:8px;border:1px solid #333947;background:#14161a;color:#e8eaf0}
+.panelBtns{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.panelBtns.col{flex-direction:column;align-items:stretch;justify-content:flex-start}
+.panel button{padding:8px 14px;border-radius:8px;border:0;font-weight:700;cursor:pointer}
+.btnPrimary{background:#f5c518;color:#14161a}
+.btnGhost{background:#262a33;color:#e8eaf0}
+.btnDanger{background:#5a2326;color:#f0b4b8}
 
 #maxAliveWrap{font-size:9px;color:#5c6373;text-align:center;display:flex;flex-direction:column;gap:4px;align-items:center}
 #maxAlive{background:#262a33;color:#e8eaf0;border:1px solid #333947;border-radius:8px;padding:4px 6px;font-size:12px}
