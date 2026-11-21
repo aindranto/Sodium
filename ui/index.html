@@ -31,14 +31,25 @@
     <p class="muted" id="ramNote"></p>
   </main>
 
-  <div id="addPanel" class="panel" hidden>
-    <h3>Tambah layanan</h3>
-    <label>Nama <input id="fName" placeholder="mis. Instagram"/></label>
-    <label>URL <input id="fUrl" placeholder="https://..."/></label>
-    <label>Ikon (1-2 huruf / emoji) <input id="fIcon" maxlength="2" placeholder="Ig"/></label>
-    <div class="panelBtns">
-      <button id="cancelService" class="btnGhost">Batal</button>
-      <button id="saveService" class="btnPrimary">Simpan</button>
+  <div id="pickerPanel" class="picker" hidden>
+    <div class="pickerHead">
+      <h3>Pilih layanan</h3>
+      <input id="pickerSearch" placeholder="Cari layanan..."/>
+    </div>
+    <div id="pickerGrid" class="pickerGrid"></div>
+    <div class="pickerCustom">
+      <h4>Atau tambah custom URL</h4>
+      <div class="customRow">
+        <input id="cName" placeholder="Nama, mis. WhatsApp 2"/>
+        <input id="cUrl" placeholder="https://..."/>
+        <input id="cIcon" placeholder="Ikon" maxlength="8" class="iconInput"/>
+        <button id="customAdd" class="btnPrimary">Tambah custom</button>
+      </div>
+      <div id="customPalette" class="palette"></div>
+    </div>
+    <div class="pickerFoot">
+      <button id="pickerSkip" class="btnGhost">Lewati</button>
+      <button id="addSelected" class="btnPrimary" disabled>Tambah (0)</button>
     </div>
   </div>
 
@@ -46,8 +57,19 @@
     <h3 id="ctxTitle">Layanan</h3>
     <div class="panelBtns col">
       <button id="ctxPin" class="btnPrimary">Pin (tetap hidup buat notif)</button>
+      <button id="ctxIcon" class="btnGhost">Ganti ikon</button>
       <button id="ctxDelete" class="btnDanger">Hapus layanan</button>
       <button id="ctxClose" class="btnGhost">Tutup</button>
+    </div>
+  </div>
+
+  <div id="iconPanel" class="panel" hidden>
+    <h3 id="iconTitle">Ganti ikon</h3>
+    <div id="iconPalette" class="palette"></div>
+    <label>Ikon sendiri (emoji / 1-2 huruf) <input id="iconText" maxlength="8" placeholder="mis. 💬"/></label>
+    <div class="panelBtns">
+      <button id="iconCancel" class="btnGhost">Batal</button>
+      <button id="iconSave" class="btnPrimary">Simpan</button>
     </div>
   </div>
 
