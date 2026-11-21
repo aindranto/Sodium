@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Sodium</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <aside id="sidebar">
+    <div id="logo" title="Sodium">Na</div>
+    <nav id="services"></nav>
+    <button id="addBtn" title="Tambah layanan">+</button>
+    <label id="maxAliveWrap" title="Berapa layanan non-pin yang boleh hidup bersamaan. 1 = paling ringan. ∞ = semua hidup (kayak Ferdium, RAM naik per layanan).">
+      Hidup bareng
+      <select id="maxAlive">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="5">5</option>
+        <option value="0">∞</option>
+      </select>
+    </label>
+    <div id="hint">Klik kanan ikon = pin / hapus</div>
+  </aside>
+  <main id="welcome">
+    <h1>Sodium</h1>
+    <p>Semua layanan sosial &amp; chat lo, dalam satu tempat — dengan cara yang ringan.</p>
+    <p class="muted">Pilih layanan di kiri untuk mulai. Layanan lain akan dimatikan total
+    (bukan disembunyikan) supaya RAM tetap rata, kecuali yang lo pin.</p>
+    <p class="muted" id="ramNote"></p>
+  </main>
+
+  <dialog id="addDialog">
+    <form method="dialog" id="addForm">
+      <h3>Tambah layanan</h3>
+      <label>Nama <input id="fName" required placeholder="mis. WhatsApp 2"/></label>
+      <label>URL <input id="fUrl" required placeholder="https://..."/></label>
+      <label>Ikon (1-2 huruf / emoji) <input id="fIcon" maxlength="2" placeholder="W"/></label>
+      <menu>
+        <button value="cancel" formnovalidate>Batal</button>
+        <button id="saveService" value="default">Simpan</button>
+      </menu>
+    </form>
+  </dialog>
+
+<script src="main.js"></script>
+</body>
+</html>
