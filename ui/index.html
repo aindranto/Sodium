@@ -8,21 +8,29 @@
 </head>
 <body>
   <aside id="sidebar">
-    <div id="logo" title="Sodium">Na</div>
     <nav id="services"></nav>
     <button id="addBtn" title="Tambah layanan">+</button>
-    <label id="maxAliveWrap" title="Berapa layanan non-pin yang boleh hidup bersamaan. 1 = paling ringan. ∞ = semua hidup (kayak Ferdium, RAM naik per layanan).">
-      Hidup bareng
-      <select id="maxAlive">
-        <option value="1">1</option>
-        <option value="2">2</option>
-        <option value="3">3</option>
-        <option value="5">5</option>
-        <option value="0">∞</option>
-      </select>
-    </label>
-    <div id="hint">Klik kanan ikon = pin / hapus</div>
   </aside>
+  <header id="topbar">
+    <div id="activeName">Sodium</div>
+    <div class="topTools">
+      <div class="zoomCtl" title="Zoom tampilan layanan">
+        <button id="zoomOut" title="Zoom out">−</button>
+        <button id="zoomLabel" title="Reset zoom ke 100%">100%</button>
+        <button id="zoomIn" title="Zoom in">+</button>
+      </div>
+      <label class="topAlive" title="Berapa layanan non-pin yang boleh hidup bersamaan. 1 = paling ringan. ∞ = semua hidup (kayak Ferdium, RAM naik per layanan).">
+        Hidup bareng
+        <select id="maxAlive">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="5">5</option>
+          <option value="0">∞</option>
+        </select>
+      </label>
+    </div>
+  </header>
   <main id="welcome">
     <h1>Sodium</h1>
     <p>Semua layanan sosial &amp; chat lo, dalam satu tempat — dengan cara yang ringan.</p>
@@ -43,6 +51,9 @@
         <input id="cName" placeholder="Nama, mis. WhatsApp 2"/>
         <input id="cUrl" placeholder="https://..."/>
         <input id="cIcon" placeholder="Ikon" maxlength="8" class="iconInput"/>
+        <button id="cUploadBtn" class="btnGhost" title="Upload gambar ikon (.jpg / .jpeg / .png / .ico)">Upload ikon</button>
+        <img id="cIconPreview" class="iconPreview" title="Klik untuk membatalkan gambar" hidden/>
+        <input id="cIconFile" type="file" accept=".jpg,.jpeg,.png,.ico,image/jpeg,image/png,image/x-icon" hidden/>
         <button id="customAdd" class="btnPrimary">Tambah custom</button>
       </div>
       <div id="customPalette" class="palette"></div>
@@ -67,6 +78,13 @@
     <h3 id="iconTitle">Ganti ikon</h3>
     <div id="iconPalette" class="palette"></div>
     <label>Ikon sendiri (emoji / 1-2 huruf) <input id="iconText" maxlength="8" placeholder="mis. 💬"/></label>
+    <div class="imgRow">
+      <img id="iconPreview" class="iconPreview" hidden/>
+      <button id="iconUploadBtn" class="btnGhost">Upload gambar (.jpg / .png / .ico)</button>
+      <button id="iconRemoveImg" class="btnDanger" hidden>Hapus gambar</button>
+      <input id="iconFile" type="file" accept=".jpg,.jpeg,.png,.ico,image/jpeg,image/png,image/x-icon" hidden/>
+    </div>
+    <p id="iconMsg" class="iconMsg"></p>
     <div class="panelBtns">
       <button id="iconCancel" class="btnGhost">Batal</button>
       <button id="iconSave" class="btnPrimary">Simpan</button>
