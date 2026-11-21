@@ -6,6 +6,10 @@ use tauri::{LogicalPosition, LogicalSize, Manager, State, WebviewUrl, WindowEven
 /// Width of the sidebar rendered by Sodium's own UI (ui/index.html).
 const SIDEBAR_W: f64 = 76.0;
 
+/// Height of the top bar rendered by Sodium's own UI (ui/index.html):
+/// active service name, zoom controls and the "Hidup bareng" setting.
+const TOPBAR_H: f64 = 44.0;
+
 /// Label of the webview that renders Sodium's own UI inside the main window.
 const UI_LABEL: &str = "ui";
 
@@ -20,6 +24,13 @@ struct AppState {
     /// the same time. 1 = lightest (default). 0 = unlimited (Ferdium-like,
     /// RAM grows with every service opened).
     max_alive: Mutex<usize>,
+    /// Browser-style page zoom for service webviews (1.0 = 100%), applied
+    /// to alive webviews on change and to new webviews on creation.
+    zoom: Mutex<f64>,
+    /// Label of the service webview currently shown. Alive service
+    /// webviews are stacked native controls, so exactly one may be
+    /// visible at a time: this one.
+    active: Mutex<Option<String>>,
     /// The main window, created in the setup hook as a plain `tauri::Window`
     /// (not a WebviewWindow) because only `Window` can host child webviews
     /// via `add_child`.
@@ -47,13 +58,14 @@ fn full_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f64
     (LogicalPosition::new(0.0, 0.0), logical_inner_size(window))
 }
 
-/// Bounds for a service webview: everything right of the sidebar.
+/// Bounds for a service webview: right of the sidebar, below the top bar.
 fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f64>) {
     let size = logical_inner_size(window);
     let w = size.width.max(SIDEBAR_W + 100.0);
+    let h = size.height.max(TOPBAR_H + 100.0);
     (
-        LogicalPosition::new(SIDEBAR_W, 0.0),
-        LogicalSize::new(w - SIDEBAR_W, size.height),
+        LogicalPosition::new(SIDEBAR_W, TOPBAR_H),
+        LogicalSize::new(w - SIDEBAR_W, h - TOPBAR_H),
     )
 }
 
@@ -105,6 +117,27 @@ async fn switch_service(
         let _ = wv.set_focus();
     }
 
+    // Apply the user's zoom level to the (possibly just created) webview.
+    if let Some(wv) = app.get_webview(&label) {
+        let z = *state.zoom.lock().unwrap();
+        let _ = wv.set_zoom(z);
+    }
+
+    // Show only the target. Alive service webviews are stacked native
+    // controls with the most recently *created* one on top, so without
+    // this, switching to an older alive webview (a pinned service, or
+    // max_alive > 1) changes nothing on screen: the newer webview keeps
+    // covering it, and the covered service only appears once the covering
+    // one is deleted. Hide the rest, show the target.
+    *state.active.lock().unwrap() = Some(label.clone());
+    for wv in app.webviews().values() {
+        if wv.label() == label {
+            let _ = wv.show();
+        } else if wv.label().starts_with("service-") {
+            let _ = wv.hide();
+        }
+    }
+
     // Mark target as most-recently-used.
     {
         let mut mru = state.alive_mru.lock().unwrap();
@@ -150,10 +183,13 @@ async fn switch_service(
 /// would be hidden behind e.g. WhatsApp and its buttons unclickable.
 /// Hiding is not destroying: sessions and state stay alive.
 #[tauri::command]
-fn set_services_visible(app: tauri::AppHandle, visible: bool) {
+fn set_services_visible(app: tauri::AppHandle, state: State<'_, AppState>, visible: bool) {
+    let active = state.active.lock().unwrap().clone();
     for wv in app.webviews().values() {
         if wv.label().starts_with("service-") {
-            if visible {
+            // "visible" means "panels closed": bring back only the active
+            // service, never the whole stack.
+            if visible && active.as_deref() == Some(wv.label()) {
                 let _ = wv.show();
             } else {
                 let _ = wv.hide();
@@ -171,6 +207,10 @@ fn close_service(app: tauri::AppHandle, state: State<'_, AppState>, id: String) 
         let _ = wv.close();
     }
     state.alive_mru.lock().unwrap().retain(|l| l != &label);
+    let mut active = state.active.lock().unwrap();
+    if active.as_deref() == Some(label.as_str()) {
+        *active = None;
+    }
 }
 
 #[tauri::command]
@@ -189,6 +229,18 @@ fn set_max_alive(state: State<'_, AppState>, max: usize) {
     *state.max_alive.lock().unwrap() = max;
 }
 
+/// Set the page zoom for service webviews (1.0 = 100%). Stored so newly
+/// created webviews get it too, and applied to all alive service webviews.
+#[tauri::command]
+fn set_zoom_level(app: tauri::AppHandle, state: State<'_, AppState>, scale: f64) {
+    *state.zoom.lock().unwrap() = scale;
+    for wv in app.webviews().values() {
+        if wv.label().starts_with("service-") {
+            let _ = wv.set_zoom(scale);
+        }
+    }
+}
+
 #[tauri::command]
 fn alive_services(state: State<'_, AppState>) -> Vec<String> {
     state.alive_mru.lock().unwrap().clone()
@@ -199,6 +251,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
             max_alive: Mutex::new(1),
+            zoom: Mutex::new(1.0),
             ..Default::default()
         })
         .setup(|app| {
@@ -233,6 +286,7 @@ pub fn run() {
             close_service,
             set_pinned,
             set_max_alive,
+            set_zoom_level,
             alive_services
         ])
         .on_window_event(|window, event| {
