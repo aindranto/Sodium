@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
-use tauri::webview::WebviewBuilder;
+use tauri::webview::{PermissionKind, PermissionResponse, WebviewBuilder};
 use tauri::{LogicalPosition, LogicalSize, Manager, State, WebviewUrl, WindowEvent};
 
 /// Width of the sidebar rendered by Sodium's own UI (ui/index.html).
@@ -217,6 +217,15 @@ pub fn run() {
             let state = app.state::<AppState>();
             *state.main_window.lock().unwrap() = Some(window);
             Ok(())
+        })
+        // WebView2 denies web permission requests by default when the host
+        // app does not answer them, which is why e.g. WhatsApp Web's
+        // "turn on notifications" could never be enabled. Answer the
+        // request: notifications are allowed (that is the point of a
+        // messaging aggregator); everything else keeps the default.
+        .on_permission_request(|_, kind| match kind {
+            PermissionKind::Notifications => PermissionResponse::Allow,
+            _ => PermissionResponse::Default,
         })
         .invoke_handler(tauri::generate_handler![
             switch_service,
