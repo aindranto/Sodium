@@ -38,8 +38,17 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 .panelBtns.col{flex-direction:column;align-items:stretch;justify-content:flex-start}
 .panel button{padding:8px 14px;border-radius:8px;border:0;font-weight:700;cursor:pointer}
 .btnPrimary{background:#f5c518;color:#14161a}
+.btnPrimary:hover{background:#ffcf3d}
+.btnPrimary:active{background:#e0af14}
 .btnGhost{background:#262a33;color:#e8eaf0}
+.btnGhost:hover{background:#2f3441}
+.btnGhost:active{background:#23262e}
 .btnDanger{background:#5a2326;color:#f0b4b8}
+.btnDanger:hover{background:#6d2a2e}
+.btnDanger:active{background:#4a1e21}
+:focus-visible{outline:2px solid #f5c518;outline-offset:2px}
+#ramNote.error{color:#f0b4b8;font-weight:600}
+.pickerEmpty{grid-column:1/-1;color:#9aa3b5;font-size:13px;padding:18px 4px;line-height:1.5}
 
 .picker{position:fixed;left:92px;right:16px;top:56px;bottom:16px;background:#1b1e24;color:#e8eaf0;border:1px solid #333947;border-radius:16px;padding:20px;z-index:30;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.5)}
 .picker[hidden]{display:none}
@@ -65,7 +74,7 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 .palette button:hover{background:#2f3441}
 .pickerFoot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .pickerFoot button{padding:8px 14px;border-radius:8px;border:0;font-weight:700;cursor:pointer}
-#addSelected:disabled{opacity:.4;cursor:default}
+#addSelected:disabled{opacity:.4;cursor:not-allowed}
 #iconPanel label{display:block;margin:12px 0;font-size:13px;color:#9aa3b5}
 #iconPanel input{display:block;width:100%;margin-top:4px;padding:9px;border-radius:8px;border:1px solid #333947;background:#14161a;color:#e8eaf0}
 
