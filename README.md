@@ -27,13 +27,14 @@ Analisis lengkap mengenai kode sumber Ferdium dan pertimbangan desainnya tersedi
 
 ## Fitur
 
-- **Pemilih layanan** bergaya Ferdium yang tampil saat aplikasi pertama kali dibuka (dan melalui tombol "+"): 21 layanan populer yang dapat dipilih dengan sekali klik — beberapa layanan sekaligus — dilengkapi kolom pencarian. Custom URL tetap tersedia.
-- **Ikon khusus untuk setiap layanan**: emoji dan warna khas dari katalog, dapat diganti melalui palet emoji, teks bebas, atau **unggahan gambar sendiri** (.jpg / .jpeg / .png / .ico).
+- **Pemilih layanan** bergaya Ferdium yang tampil saat aplikasi pertama kali dibuka (dan melalui tombol "+"): 21 layanan populer yang ditambahkan dengan sekali klik — klik lagi untuk menambah akun kedua, ketiga, dan seterusnya pada layanan yang sama — dilengkapi kolom pencarian. Custom URL tetap tersedia.
+- **Ikon khusus untuk setiap layanan**: logo asli brand dari katalog (Simple Icons), dengan **warna tile dan warna logo yang dapat diatur sendiri**, dapat diganti melalui palet emoji, teks bebas, atau **unggahan gambar sendiri** (.jpg / .jpeg / .png / .ico).
 - **Bar atas** berisi nama layanan yang sedang aktif, **zoom** tampilan layanan (50%–200%, tersimpan secara permanen), dan pengaturan *Hidup bareng*.
 - **Pin** layanan agar selalu aktif (misalnya WhatsApp untuk notifikasi), **nonaktifkan** layanan untuk mematikannya secara total untuk sementara tanpa kehilangan sesi masuk, serta pintasan **Ctrl+1..9** untuk berpindah layanan.
+- **Duplikat (akun beda)** melalui menu klik kanan pada ikon layanan: menyalin URL dan ikon dengan profil yang masih kosong, untuk masuk dengan akun lain pada layanan yang sama.
 - Notifikasi situs dapat diaktifkan, karena Sodium menjawab permintaan izin notifikasi dengan benar.
 
-Belum tersedia: badge pesan belum dibaca, system tray, jembatan notifikasi native, dan pembaruan otomatis.
+Belum tersedia: system tray, jembatan notifikasi native, dan pembaruan otomatis.
 
 ## Pengembangan
 
