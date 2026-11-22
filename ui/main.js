@@ -9,13 +9,13 @@ const CATALOG = [
   { id: "whatsapp",  name: "WhatsApp",        url: "https://web.whatsapp.com/",        icon: "💬", color: "#1faa55" },
   { id: "telegram",  name: "Telegram",        url: "https://web.telegram.org/k/",      icon: "✈️", color: "#229ed9" },
   { id: "instagram", name: "Instagram",       url: "https://www.instagram.com/",       icon: "📸", color: "#c13584" },
-  { id: "messenger", name: "Messenger",       url: "https://www.messenger.com/",       icon: "⚡", color: "#0084ff" },
+  { id: "messenger", name: "Messenger",       url: "https://www.messenger.com/",       icon: "M", color: "#0084ff" },
   { id: "discord",   name: "Discord",         url: "https://discord.com/channels/@me", icon: "🎮", color: "#5865f2" },
   { id: "gmail",     name: "Gmail",           url: "https://mail.google.com/",         icon: "✉️", color: "#d93025" },
   { id: "facebook",  name: "Facebook",        url: "https://www.facebook.com/",        icon: "👍", color: "#1877f2" },
   { id: "tiktok",    name: "TikTok",          url: "https://www.tiktok.com/",          icon: "🎵", color: "#161823" },
   { id: "youtube",   name: "YouTube",         url: "https://www.youtube.com/",         icon: "▶️", color: "#ff0000" },
-  { id: "twitter",   name: "X (Twitter)",     url: "https://x.com/",                   icon: "🐦", color: "#14171a" },
+  { id: "twitter",   name: "X (Twitter)",     url: "https://x.com/",                   icon: "X", color: "#14171a" },
   { id: "slack",     name: "Slack",           url: "https://app.slack.com/client",     icon: "#️⃣", color: "#611f69" },
   { id: "teams",     name: "Microsoft Teams", url: "https://teams.microsoft.com/",     icon: "👥", color: "#4b53bc" },
   { id: "gcal",      name: "Google Calendar", url: "https://calendar.google.com/",     icon: "📅", color: "#4285f4" },
@@ -29,7 +29,7 @@ const CATALOG = [
   { id: "shopee",    name: "Shopee",          url: "https://shopee.co.id/",            icon: "🛍️", color: "#ee4d2d" },
 ];
 
-const ICON_PALETTE = ["💬","✈️","📸","🎮","✉️","🎵","📺","👍","🎧","🐙","💼","🤖","📌","🎬","🛍️","⭐","❤️","🔥","✅","📅","👥","🌐","💡","🚀"];
+const ICON_PALETTE = ["💬","✈️","📸","🎮","✉️","🎵","📺","👍","🎧","🐙","💼","🤖","📌","🎬","🛍️","🛒","❤️","🔥","✅","📅","👥","🌐","💡","📰"];
 
 const DEFAULT_SERVICES = [
   // Agung's daily driver, pre-added. Everything else comes from the picker.
