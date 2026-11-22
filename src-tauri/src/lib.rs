@@ -326,6 +326,26 @@ fn notification_action(
     }
 }
 
+/// JS injected into a service page to dim it while the right-click
+/// menu is open. The service webview is a native control layered
+/// above Sodium's UI, so the UI cannot paint over it; the dim has to
+/// live inside the page itself. The overlay swallows clicks, so the
+/// page is inert while the menu is up; removing the element restores
+/// the page exactly as it was.
+const DIM_ON_JS: &str = "(()=>{let d=document.getElementById('__sodium_dim');if(!d){d=document.createElement('div');d.id='__sodium_dim';d.style.cssText='position:fixed;inset:0;background:rgba(5,6,10,.55);z-index:2147483647';document.documentElement.appendChild(d);}})()";
+const DIM_OFF_JS: &str =
+    "(()=>{const d=document.getElementById('__sodium_dim');if(d)d.remove();})()";
+
+/// Dim (or un-dim) a service's page in place. Used by the right-click
+/// menu, which — unlike the other panels — keeps the service visible
+/// behind it instead of hiding the webview.
+#[tauri::command]
+fn set_service_dim(app: tauri::AppHandle, id: String, dim: bool) {
+    if let Some(wv) = app.get_webview(&label_for(&id)) {
+        let _ = wv.eval(if dim { DIM_ON_JS } else { DIM_OFF_JS });
+    }
+}
+
 /// Unread count from a service page title. Services put it in the
 /// title as a leading "(n)" (WhatsApp, Telegram, Messenger, Discord)
 /// or as "Inbox (n)" (Gmail). Anything else means no badge; counts are
@@ -810,7 +830,8 @@ pub fn run() {
             close_link_popup,
             open_external,
             alive_services,
-            notification_action
+            notification_action,
+            set_service_dim
         ])
         .on_window_event(|window, event| {
             // Keep the UI and service webviews filling the main window.

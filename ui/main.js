@@ -64,6 +64,8 @@ const unread = new Map();
 let pinned = store.pinned();
 let disabled = store.disabled();
 let activeId = null;
+// Show each service's name under its sidebar icon (Kelola panel toggle).
+let showNames = localStorage.getItem("sodium.showNames") === "1";
 
 const nav = document.getElementById("services");
 const { invoke } = window.__TAURI__.core;
@@ -103,8 +105,8 @@ function hostOf(u) {
 const pickerPanel = el("pickerPanel");
 const ctxPanel = el("ctxPanel");
 const iconPanel = el("iconPanel");
-const renamePanel = el("renamePanel");
-const allPanels = [pickerPanel, ctxPanel, iconPanel, renamePanel];
+const managePanel = el("managePanel");
+const allPanels = [pickerPanel, ctxPanel, iconPanel, managePanel];
 let ctxService = null;
 let iconTarget = null;
 
@@ -112,8 +114,9 @@ let lastFocus = null;
 async function openPanel(panel) {
   lastFocus = document.activeElement;
   for (const p of allPanels) p.hidden = true;
-  // Only the picker is a modal dialog: it gets the dimmed backdrop.
-  el("scrim").hidden = panel.id !== "pickerPanel";
+  // Only the modal popups (picker / Kelola, class "picker") get the
+  // dimmed backdrop.
+  el("scrim").hidden = !panel.classList.contains("picker");
   await invoke("set_services_visible", { visible: false });
   panel.hidden = false;
   const f = panel.querySelector("input:not([type='file']), button:not([disabled])");
@@ -123,6 +126,13 @@ async function openPanel(panel) {
 async function closePanels() {
   for (const p of allPanels) p.hidden = true;
   el("scrim").hidden = true;
+  // The right-click menu keeps its service visible but dimmed (see
+  // openCtx): lift the dim again, whichever way the menu was closed.
+  if (dimmedId) {
+    const d = dimmedId;
+    dimmedId = null;
+    try { await invoke("set_service_dim", { id: d, dim: false }); } catch { /* webview may be gone */ }
+  }
   await invoke("set_services_visible", { visible: true });
   if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
 }
@@ -212,20 +222,32 @@ function iconVisual(s, px) {
   return sp;
 }
 
+// The right-click menu is the one panel that does NOT hide the
+// service webviews: the visible service's page is dimmed in place
+// instead (Rust injects a dark overlay into the page, removed again
+// by closePanels), so the user keeps their context while choosing.
+let dimmedId = null;
 async function openCtx(s) {
   ctxService = s;
   el("ctxTitle").textContent = s.name;
   el("ctxPin").textContent = pinned.has(s.id) ? "Unpin" : "Pin (tetap hidup buat notif)";
   el("ctxDisable").textContent = disabled.has(s.id) ? "Aktifkan lagi" : "Nonaktifkan (matikan total sementara)";
-  // Delete is a two-step action (see the ctxDelete handler): every fresh
-  // opening of the menu starts disarmed.
-  const del = el("ctxDelete");
-  del.dataset.armed = "";
-  del.textContent = "Hapus layanan";
-  await openPanel(ctxPanel);
+  lastFocus = document.activeElement;
+  for (const p of allPanels) p.hidden = true;
+  el("scrim").hidden = true;
+  // Make sure the active service is actually on screen to be dimmed
+  // (another panel may have hidden the webviews).
+  await invoke("set_services_visible", { visible: true });
+  ctxPanel.hidden = false;
+  if (activeId) {
+    dimmedId = activeId;
+    try { await invoke("set_service_dim", { id: dimmedId, dim: true }); } catch { /* webview may be gone */ }
+  }
+  el("ctxPin").focus();
 }
 
 function render() {
+  document.body.classList.toggle("showNames", showNames);
   nav.innerHTML = "";
   for (const s of services) {
     const b = document.createElement("button");
@@ -248,6 +270,12 @@ function render() {
     }
     if (pinned.has(s.id)) {
       const p = document.createElement("span"); p.className = "pin"; b.appendChild(p);
+    }
+    if (showNames) {
+      const nm = document.createElement("span");
+      nm.className = "svcName";
+      nm.textContent = s.name;
+      b.appendChild(nm);
     }
     const n = unread.get(s.id);
     if (n && !disabled.has(s.id)) {
@@ -474,34 +502,105 @@ async function fetchFaviconFor(s) {
   if (!host) return;
   for (const u of faviconSources(host)) {
     const d = await faviconAsDataUrl(u);
-    if (d) { s.img = d; store.save(services); render(); return; }
+    if (d) { s.img = d; s.favicon = true; store.save(services); render(); return; }
   }
   s.img = faviconSources(host)[0];
+  s.favicon = true;
   store.save(services); render();
 }
 
 // ---------------------------------------------------------------------------
-// Right-click panel: pin / change icon / delete
+// Service actions, shared by the right-click menu (quick actions) and
+// the Kelola layanan panel (full management, v0.4.0).
 // ---------------------------------------------------------------------------
-el("ctxPin").addEventListener("click", async () => {
-  if (!ctxService) return;
-  const nowPinned = !pinned.has(ctxService.id);
-  if (nowPinned) pinned.add(ctxService.id); else pinned.delete(ctxService.id);
+function togglePin(s) {
+  const nowPinned = !pinned.has(s.id);
+  if (nowPinned) pinned.add(s.id); else pinned.delete(s.id);
   store.savePinned(pinned);
-  invoke("set_pinned", { id: ctxService.id, pinned: nowPinned });
+  invoke("set_pinned", { id: s.id, pinned: nowPinned });
   render();
-  await closePanels();
-});
-el("ctxIcon").addEventListener("click", async () => {
-  if (!ctxService) return;
-  iconTarget = ctxService;
-  el("iconTitle").textContent = "Ganti ikon: " + ctxService.name;
+}
+
+// Disable = destroy the webview completely (RAM freed, nothing runs),
+// but keep the profile folder: cookies/session survive on disk, so
+// re-enabling never asks for a new login.
+async function setServiceDisabled(s, off) {
+  const id = s.id;
+  if (!off) {
+    disabled.delete(id);
+  } else {
+    disabled.add(id);
+    await invoke("close_service", { id });
+    if (activeId === id) {
+      activeId = null;
+      if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive");
+      el("activeName").textContent = "Sodium";
+      el("welcome").style.display = "block";
+      showZoom();
+    }
+  }
+  store.saveDisabled(disabled);
+  render();
+}
+
+// Duplicate with a fresh, empty profile: same URL, icon and colours,
+// next free number in the name ("WhatsApp 2", "WhatsApp 3", ...). No
+// session or cookie is copied, so the copy is a clean sign-in for a
+// different account. Pin and disabled state are per-service and are
+// not inherited: the new id is in neither set.
+function duplicateService(srcSvc) {
+  const base = srcSvc.name.replace(/\s+\d+$/, "");
+  let n = 2;
+  while (services.some(s => s.name === base + " " + n)) n++;
+  const copy = { ...srcSvc, id: srcSvc.id + "-d" + Date.now().toString(36), name: base + " " + n };
+  services.push(copy);
+  store.save(services);
+  render();
+  return copy;
+}
+
+// Delete removes the service from the list; its profile folder stays
+// on disk either way, so re-adding it later restores the login.
+async function deleteService(id) {
+  services = services.filter(x => x.id !== id);
+  store.save(services);
+  if (pinned.has(id)) { pinned.delete(id); store.savePinned(pinned); invoke("set_pinned", { id, pinned: false }); }
+  if (disabled.has(id)) { disabled.delete(id); store.saveDisabled(disabled); }
+  if (activeId === id) {
+    activeId = null;
+    el("activeName").textContent = "Sodium";
+    el("welcome").style.display = "block";
+  }
+  if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive");
+  await invoke("close_service", { id });
+  render();
+}
+
+async function openIconPanel(s) {
+  iconTarget = s;
+  el("iconTitle").textContent = "Ganti ikon: " + s.name;
   el("iconText").value = "";
   el("iconMsg").textContent = "";
-  iconDraft = { color: ctxService.color || "#262a33", iconColor: ctxService.iconColor || "#ffffff" };
+  iconDraft = { color: s.color || "#262a33", iconColor: s.iconColor || "#ffffff" };
   refreshIconPanelImg();
   refreshIconColors();
   await openPanel(iconPanel);
+}
+
+// Right-click menu (v0.4.0): quick actions only — pin, disable, and
+// the door to the Kelola panel where everything else lives.
+el("ctxPin").addEventListener("click", async () => {
+  if (!ctxService) return;
+  togglePin(ctxService);
+  await closePanels();
+});
+el("ctxDisable").addEventListener("click", async () => {
+  if (!ctxService) return;
+  await setServiceDisabled(ctxService, !disabled.has(ctxService.id));
+  await closePanels();
+});
+el("ctxManage").addEventListener("click", async () => {
+  await openManage();
 });
 
 function refreshIconPanelImg() {
@@ -551,110 +650,191 @@ function refreshIconColors() {
   }
 }
 el("iconText").addEventListener("input", refreshIconColors);
-// Rename: the name is a label only. Profile folder, pin, zoom and
-// disabled state are all keyed by the service id, so renaming never
-// logs anyone out or loses a setting.
-let renameTarget = null;
-el("ctxRename").addEventListener("click", async () => {
-  if (!ctxService) return;
-  renameTarget = ctxService;
-  el("renameTitle").textContent = "Ganti nama: " + ctxService.name;
-  el("renameText").value = ctxService.name;
-  await openPanel(renamePanel);
-  el("renameText").select();
-});
-async function saveRename() {
-  if (!renameTarget) return;
-  const v = el("renameText").value.trim();
-  if (!v) return;
-  if (v !== renameTarget.name) {
-    renameTarget.name = v;
-    store.save(services);
-    if (activeId === renameTarget.id) el("activeName").textContent = v;
-    render();
-  }
-  await closePanels();
-}
-el("renameSave").addEventListener("click", saveRename);
-el("renameCancel").addEventListener("click", closePanels);
-el("renameText").addEventListener("keydown", (e) => { if (e.key === "Enter") saveRename(); });
 
-// Duplicate with a fresh, empty profile: same URL, icon and colours,
-// next free number in the name ("WhatsApp 2", "WhatsApp 3", ...). No
-// session or cookie is copied, so the copy is a clean sign-in for a
-// different account. Pin and disabled state are per-service and are
-// not inherited: the new id is in neither set.
-el("ctxDuplicate").addEventListener("click", async () => {
-  if (!ctxService) return;
-  const srcSvc = ctxService;
-  const base = srcSvc.name.replace(/\s+\d+$/, "");
-  let n = 2;
-  while (services.some(s => s.name === base + " " + n)) n++;
-  const copy = { ...srcSvc, id: srcSvc.id + "-d" + Date.now().toString(36), name: base + " " + n };
-  services.push(copy);
-  store.save(services);
+// ---------------------------------------------------------------------------
+// Kelola layanan panel (v0.4.0): every service setting in one place —
+// edit (name / icon / URL), reorder, pin, disable, duplicate, delete,
+// plus the global "show names in the sidebar" toggle. Opened from the
+// sidebar button under "+", or from the right-click menu.
+// ---------------------------------------------------------------------------
+const manageList = el("manageList");
+let manageEditId = null;      // service id whose edit form is open
+let manageDeleteArmed = null; // service id whose Hapus awaits a confirm click
+
+async function openManage() {
+  renderManage();
+  await openPanel(managePanel);
+}
+el("manageBtn").addEventListener("click", openManage);
+el("manageClose").addEventListener("click", closePanels);
+el("showNamesToggle").addEventListener("change", () => {
+  showNames = el("showNamesToggle").checked;
+  localStorage.setItem("sodium.showNames", showNames ? "1" : "0");
   render();
-  await closePanels();
 });
-el("ctxDisable").addEventListener("click", async () => {
-  if (!ctxService) return;
-  const id = ctxService.id;
-  if (disabled.has(id)) {
-    // Re-enable only: the webview is created on the next click, and the
-    // login session is still on disk, so no re-login is needed.
-    disabled.delete(id);
-  } else {
-    // Disable = destroy the webview completely (RAM freed, nothing runs),
-    // but keep the profile folder: cookies/session survive on disk.
-    disabled.add(id);
-    await invoke("close_service", { id });
-    if (activeId === id) {
-      activeId = null;
-      if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive");
-      el("activeName").textContent = "Sodium";
-      el("welcome").style.display = "block";
-      showZoom();
+
+function mgButton(text, cls, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = cls;
+  b.textContent = text;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function renderManage() {
+  el("showNamesToggle").checked = showNames;
+  manageList.innerHTML = "";
+  services.forEach((s, idx) => {
+    const row = document.createElement("div");
+    row.className = "mgRow" + (disabled.has(s.id) ? " off" : "");
+    const ic = document.createElement("span");
+    ic.className = "tileIcon mgIcon";
+    if (s.img) {
+      const im = document.createElement("img");
+      im.className = "svcImg"; im.src = s.img; im.alt = "";
+      im.onerror = () => { im.replaceWith(iconVisual(s, 24)); if (s.color) ic.style.background = s.color; };
+      ic.appendChild(im);
+    } else {
+      if (s.color) ic.style.background = s.color;
+      ic.appendChild(iconVisual(s, 24));
     }
-  }
-  store.saveDisabled(disabled);
-  render();
-  await closePanels();
-});
-el("ctxDelete").addEventListener("click", async () => {
-  if (!ctxService) return;
-  // Two-step delete: the first click arms the button, the second one
-  // really deletes. The profile folder stays on disk either way, so
-  // re-adding the service later restores the login session.
-  if (!el("ctxDelete").dataset.armed) {
-    el("ctxDelete").dataset.armed = "1";
-    el("ctxDelete").textContent = "Yakin hapus? Klik sekali lagi";
-    return;
-  }
-  const id = ctxService.id;
-  services = services.filter(x => x.id !== id);
+    const info = document.createElement("div");
+    info.className = "mgInfo";
+    const nm = document.createElement("div");
+    nm.className = "mgName"; nm.textContent = s.name;
+    const sub = document.createElement("div");
+    sub.className = "mgSub"; sub.textContent = s.url; sub.title = s.url;
+    info.append(nm, sub);
+    const status = [pinned.has(s.id) ? "Pin" : "", disabled.has(s.id) ? "Nonaktif" : ""].filter(Boolean).join(" · ");
+    if (status) {
+      const st = document.createElement("div");
+      st.className = "mgStatus"; st.textContent = status;
+      info.appendChild(st);
+    }
+    const btns = document.createElement("div");
+    btns.className = "mgBtns";
+    const up = mgButton("↑", "btnGhost", () => moveService(idx, -1));
+    up.disabled = idx === 0;
+    up.title = "Pindah ke atas";
+    const down = mgButton("↓", "btnGhost", () => moveService(idx, 1));
+    down.disabled = idx === services.length - 1;
+    down.title = "Pindah ke bawah";
+    btns.append(
+      up, down,
+      mgButton("Edit", "btnGhost", () => { manageEditId = manageEditId === s.id ? null : s.id; manageDeleteArmed = null; renderManage(); }),
+      mgButton(pinned.has(s.id) ? "Unpin" : "Pin", "btnGhost", () => { togglePin(s); renderManage(); }),
+      mgButton(disabled.has(s.id) ? "Aktifkan" : "Nonaktif", "btnGhost", async () => { await setServiceDisabled(s, !disabled.has(s.id)); renderManage(); }),
+      mgButton("Duplikat", "btnGhost", () => { duplicateService(s); renderManage(); }),
+      mgButton(manageDeleteArmed === s.id ? "Yakin hapus?" : "Hapus", "btnDanger", async () => {
+        if (manageDeleteArmed !== s.id) { manageDeleteArmed = s.id; renderManage(); return; }
+        manageDeleteArmed = null;
+        if (manageEditId === s.id) manageEditId = null;
+        await deleteService(s.id);
+        renderManage();
+      }),
+    );
+    row.append(ic, info, btns);
+    if (manageEditId === s.id) row.appendChild(buildManageForm(s));
+    manageList.appendChild(row);
+  });
+}
+
+function moveService(idx, dir) {
+  const j = idx + dir;
+  if (j < 0 || j >= services.length) return;
+  const it = services[idx];
+  services[idx] = services[j];
+  services[j] = it;
   store.save(services);
-  if (pinned.has(id)) { pinned.delete(id); store.savePinned(pinned); }
-  if (disabled.has(id)) { disabled.delete(id); store.saveDisabled(disabled); }
-  if (activeId === id) activeId = null;
-  if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive");
-  await invoke("close_service", { id });
   render();
-  await closePanels();
-});
-el("ctxClose").addEventListener("click", closePanels);
+  renderManage();
+}
+
+function buildManageForm(s) {
+  const form = document.createElement("div");
+  form.className = "mgForm";
+  const nameLabel = document.createElement("label");
+  nameLabel.textContent = "Nama layanan";
+  const nameIn = document.createElement("input");
+  nameIn.value = s.name;
+  nameIn.maxLength = 40;
+  nameLabel.appendChild(nameIn);
+  const urlLabel = document.createElement("label");
+  urlLabel.textContent = "URL";
+  const urlIn = document.createElement("input");
+  urlIn.value = s.url;
+  urlIn.spellcheck = false;
+  urlLabel.appendChild(urlIn);
+  const warn = document.createElement("p");
+  warn.className = "mgWarn";
+  warn.hidden = true;
+  const oldHost = hostOf(s.url);
+  urlIn.addEventListener("input", () => {
+    const nh = hostOf(urlIn.value.trim());
+    warn.hidden = !(nh && oldHost && nh !== oldHost);
+    if (!warn.hidden) {
+      warn.textContent = "Host berubah (" + oldHost + " → " + nh + "): webview layanan ditutup dan dibuka ulang pakai alamat baru. Sesi login lama tetap tersimpan di profil layanan ini.";
+    }
+  });
+  const btns = document.createElement("div");
+  btns.className = "mgFormBtns";
+  btns.append(
+    mgButton("Ganti ikon", "btnGhost", () => openIconPanel(s)),
+    mgButton("Batal", "btnGhost", () => { manageEditId = null; renderManage(); }),
+    mgButton("Simpan", "btnPrimary", () => saveManageEdit(s, nameIn, urlIn)),
+  );
+  form.append(nameLabel, urlLabel, warn, btns);
+  return form;
+}
+
+// Saving an edit: the name is a label only (everything is keyed by
+// id, so renaming never logs anyone out). A changed URL closes the
+// webview so the next open uses the new address; if the changed
+// service is the active one it reopens at once. A fetched favicon
+// belongs to the old host, so it is dropped and refetched; an
+// uploaded icon is kept.
+async function saveManageEdit(s, nameIn, urlIn) {
+  const name = nameIn.value.trim();
+  let url = urlIn.value.trim();
+  if (!name || !url) return;
+  if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+  const urlChanged = url !== s.url;
+  s.name = name;
+  if (activeId === s.id) el("activeName").textContent = name;
+  manageEditId = null;
+  store.save(services);
+  render();
+  renderManage();
+  if (urlChanged) {
+    s.url = url;
+    store.save(services);
+    await invoke("close_service", { id: s.id });
+    if (!s.brand && s.favicon) {
+      delete s.img;
+      delete s.favicon;
+      store.save(services);
+      fetchFaviconFor(s);
+    }
+    render();
+    renderManage();
+    if (activeId === s.id) await switchTo(s);
+  }
+}
 
 // Icon changer panel
 buildPalette(el("iconPalette"), async (e) => {
   if (!iconTarget) return;
   iconTarget.icon = e;
   delete iconTarget.img;
+  delete iconTarget.favicon;
   store.save(services); render();
   await closePanels();
 });
 el("iconSave").addEventListener("click", async () => {
   if (!iconTarget) return;
   const v = el("iconText").value.trim();
-  if (v) { iconTarget.icon = v; delete iconTarget.img; }
+  if (v) { iconTarget.icon = v; delete iconTarget.img; delete iconTarget.favicon; }
   iconTarget.color = iconDraft.color;
   iconTarget.iconColor = iconDraft.iconColor;
   store.save(services); render();
@@ -668,6 +848,7 @@ el("iconFile").addEventListener("change", async (e) => {
   if (!f || !iconTarget) return;
   try {
     iconTarget.img = await processIconFile(f);
+    delete iconTarget.favicon;
     store.save(services); render();
     await closePanels();
   } catch (err) {
@@ -677,6 +858,7 @@ el("iconFile").addEventListener("change", async (e) => {
 el("iconRemoveImg").addEventListener("click", async () => {
   if (!iconTarget) return;
   delete iconTarget.img;
+  delete iconTarget.favicon;
   store.save(services); render();
   await closePanels();
 });

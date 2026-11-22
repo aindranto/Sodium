@@ -10,6 +10,7 @@
   <aside id="sidebar">
     <nav id="services"></nav>
     <button id="addBtn" title="Tambah layanan" aria-label="Tambah layanan">+</button>
+    <button id="manageBtn" title="Kelola layanan" aria-label="Kelola layanan"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M19 7h1M4 12h3M13 12h7M4 17h11M19 17h1"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="12" r="2.2"/><circle cx="17.5" cy="17" r="2.2"/></svg></button>
   </aside>
   <header id="topbar">
     <div id="activeName">Sodium</div>
@@ -83,12 +84,8 @@
     <h3 id="ctxTitle">Layanan</h3>
     <div class="panelBtns col">
       <button id="ctxPin" class="btnPrimary">Pin (tetap hidup buat notif)</button>
-      <button id="ctxIcon" class="btnGhost">Ganti ikon</button>
-      <button id="ctxRename" class="btnGhost">Ganti nama</button>
-      <button id="ctxDuplicate" class="btnGhost">Duplikat (akun beda)</button>
       <button id="ctxDisable" class="btnGhost">Nonaktifkan layanan</button>
-      <button id="ctxDelete" class="btnDanger">Hapus layanan</button>
-      <button id="ctxClose" class="btnGhost">Tutup</button>
+      <button id="ctxManage" class="btnGhost">Kelola layanan</button>
     </div>
   </div>
 
@@ -121,12 +118,14 @@
     </div>
   </div>
 
-<div id="renamePanel" class="panel" hidden>
-    <h3 id="renameTitle">Ganti nama</h3>
-    <label>Nama layanan <input id="renameText" maxlength="40" placeholder="Nama layanan"/></label>
-    <div class="panelBtns">
-      <button id="renameCancel" class="btnGhost">Batal</button>
-      <button id="renameSave" class="btnPrimary">Simpan</button>
+<div id="managePanel" class="picker" hidden>
+    <div class="pickerHead">
+      <h3>Kelola layanan</h3>
+      <label class="manageToggle"><input type="checkbox" id="showNamesToggle"/> Tampilkan nama di ikon sidebar</label>
+    </div>
+    <div id="manageList" class="manageList"></div>
+    <div class="pickerFoot">
+      <button id="manageClose" class="btnGhost">Tutup</button>
     </div>
   </div>
 
