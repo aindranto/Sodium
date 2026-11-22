@@ -66,8 +66,6 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 .pickerGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;overflow-y:auto;margin:16px 0;padding-right:4px;flex:1;min-height:0}
 .tile{position:relative;background:#262a33;border:2px solid transparent;border-radius:14px;padding:14px 6px 10px;color:#e8eaf0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px}
 .tile:hover{background:#2f3441}
-.tile.selected{border-color:#f5c518}
-.tile.added{opacity:.45;cursor:default}
 .tileIcon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700}
 .tileName{font-size:12px;font-weight:600;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .tileBadge{position:absolute;top:6px;right:6px;font-size:10px;background:#14161a;color:#9aa3b5;padding:2px 6px;border-radius:99px}
@@ -82,7 +80,6 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 .palette button:hover{background:#2f3441}
 .pickerFoot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .pickerFoot button{padding:8px 14px;border-radius:8px;border:0;font-weight:700;cursor:pointer}
-#addSelected:disabled{opacity:.4;cursor:not-allowed}
 #iconPanel label{display:block;margin:12px 0;font-size:13px;color:#9aa3b5}
 #iconPanel input{display:block;width:100%;margin-top:4px;padding:9px;border-radius:8px;border:1px solid #333947;background:#14161a;color:#e8eaf0}
 
@@ -92,3 +89,12 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 .iconPreview{width:40px;height:40px;border-radius:10px;object-fit:cover;border:1px solid #333947}
 #cIconPreview{cursor:pointer}
 .iconMsg{font-size:12px;color:#f0b4b8;min-height:14px;margin:8px 0 0}
+
+.svgIcon{display:flex;align-items:center;justify-content:center;width:100%;height:100%}
+.txtIcon{display:flex;align-items:center;justify-content:center;width:100%;height:100%}
+.tileIcon .svgIcon,.tileIcon .txtIcon{width:auto;height:auto}
+.swatches{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.swatch{width:28px;height:28px;border-radius:8px;border:1px solid #333947;cursor:pointer;padding:0}
+.swatch.sel{outline:2px solid #f5c518;outline-offset:2px}
+.colorRow{margin-top:12px;font-size:13px;color:#9aa3b5}
+#iconCombo{margin-top:6px}
