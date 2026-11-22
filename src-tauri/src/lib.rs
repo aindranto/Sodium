@@ -177,6 +177,29 @@ fn shortcut_index(code: tauri_plugin_global_shortcut::Code) -> Option<usize> {
     }
 }
 
+/// Unread count from a service page title. Services put it in the
+/// title as a leading "(n)" (WhatsApp, Telegram, Messenger, Discord)
+/// or as "Inbox (n)" (Gmail). Anything else means no badge; counts are
+/// capped at 999, which also keeps title years like "(2024)" from
+/// being misread as unread counts.
+fn parse_unread(title: &str) -> usize {
+    fn paren_number(s: &str) -> Option<usize> {
+        let inner = s.split(')').next()?;
+        if inner.is_empty() || !inner.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        inner.parse().ok()
+    }
+    let count = if let Some(rest) = title.strip_prefix('(') {
+        paren_number(rest)
+    } else if let Some(pos) = title.find("Inbox (") {
+        paren_number(&title[pos + "Inbox (".len()..])
+    } else {
+        None
+    };
+    count.filter(|&n| n <= 999).unwrap_or(0)
+}
+
 /// Saved main-window geometry (logical pixels), restored on startup so
 /// Sodium reopens where and how big the user left it.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -272,6 +295,8 @@ async fn switch_service(
         // would be silently dropped by WebView2. Deny the window and
         // tell the UI instead: it shows the link popup over the service.
         let app_for_links = app.clone();
+        let app_for_title = app.clone();
+        let id_for_title = id.clone();
         let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
             .data_directory(data_dir)
             .on_new_window(move |u, _features| {
@@ -281,7 +306,18 @@ async fn switch_service(
             .on_download(make_download_handler(
                 app.clone(),
                 state.download_dir.clone(),
-            ));
+            ))
+            // Unread badge: services announce unread chats in their
+            // page title ("(3) WhatsApp"); forward the parsed count to
+            // the UI, which draws the number on the sidebar icon.
+            .on_document_title_changed(move |_wv, title| {
+                let count = parse_unread(&title);
+                let _ = app_for_title.emit_to(
+                    UI_LABEL,
+                    "unread-changed",
+                    (id_for_title.clone(), count),
+                );
+            });
         let (pos, size) = service_bounds(&window);
         window
             .add_child(builder, pos, size)
@@ -355,6 +391,13 @@ fn evict_over_limit(app: &tauri::AppHandle, state: &AppState) {
                 if let Some(wv) = app.get_webview(&v) {
                     let _ = wv.close();
                 }
+                // A destroyed webview has no live count: clear its
+                // badge instead of leaving a stale number behind.
+                let _ = app.emit_to(
+                    UI_LABEL,
+                    "unread-changed",
+                    (id_from_label(&v).to_string(), 0usize),
+                );
                 state.alive_mru.lock().unwrap().retain(|l| l != &v);
             }
             None => break,
@@ -487,6 +530,7 @@ fn close_service(app: tauri::AppHandle, state: State<'_, AppState>, id: String) 
     if let Some(wv) = app.get_webview(&label) {
         let _ = wv.close();
     }
+    let _ = app.emit_to(UI_LABEL, "unread-changed", (id.clone(), 0usize));
     state.alive_mru.lock().unwrap().retain(|l| l != &label);
     let mut active = state.active.lock().unwrap();
     if active.as_deref() == Some(label.as_str()) {
