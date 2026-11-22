@@ -22,6 +22,11 @@ const TOPBAR_H: f64 = 44.0;
 /// Height of the link bar the UI shows above the link popup.
 const LINKBAR_H: f64 = 40.0;
 
+/// Height of the UI's notification strip (v0.4.1): while a service
+/// notification waits for an answer, the strip sits under the top bar
+/// and the service webviews move down by this much.
+const NOTIF_H: f64 = 46.0;
+
 /// Label of the link-popup webview. Deliberately not "service-"-prefixed:
 /// it is not a service (no eviction, no profile-per-service rules).
 const POPUP_LABEL: &str = "link-popup";
@@ -61,6 +66,10 @@ struct AppState {
     /// can be told when the user clicks or dismisses Sodium's own
     /// notification banner (see hook_notifications).
     notifications: std::sync::Arc<Mutex<HashMap<String, NotificationHandle>>>,
+    /// Whether the UI's big notification strip is currently shown.
+    /// While it is, service webviews sit NOTIF_H lower so the strip
+    /// (rendered by the UI webview) is not covered by them.
+    notif_strip: Mutex<bool>,
 }
 
 /// A live WebView2 notification object. `ReportClicked` on it makes
@@ -100,15 +109,38 @@ fn full_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f64
     (LogicalPosition::new(0.0, 0.0), logical_inner_size(window))
 }
 
-/// Bounds for a service webview: right of the sidebar, below the top bar.
-fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f64>) {
+/// Bounds for a service webview: right of the sidebar, below the top
+/// bar — and below the notification strip while that is shown.
+fn service_bounds(
+    window: &tauri::Window,
+    strip: bool,
+) -> (LogicalPosition<f64>, LogicalSize<f64>) {
+    let top = if strip { TOPBAR_H + NOTIF_H } else { TOPBAR_H };
     let size = logical_inner_size(window);
     let w = size.width.max(SIDEBAR_W + 100.0);
-    let h = size.height.max(TOPBAR_H + 100.0);
+    let h = size.height.max(top + 100.0);
     (
-        LogicalPosition::new(SIDEBAR_W, TOPBAR_H),
-        LogicalSize::new(w - SIDEBAR_W, h - TOPBAR_H),
+        LogicalPosition::new(SIDEBAR_W, top),
+        LogicalSize::new(w - SIDEBAR_W, h - top),
     )
+}
+
+/// Show or hide the notification strip's space: records the flag and
+/// repositions every alive service webview to match. Called by the UI
+/// together with showing/hiding the strip itself.
+#[tauri::command]
+fn set_notif_strip(app: tauri::AppHandle, state: State<'_, AppState>, visible: bool) {
+    *state.notif_strip.lock().unwrap() = visible;
+    let window = state.main_window.lock().unwrap().clone();
+    if let Some(window) = window {
+        let (pos, size) = service_bounds(&window, visible);
+        for wv in app.webviews().values() {
+            if wv.label().starts_with("service-") {
+                let _ = wv.set_position(pos);
+                let _ = wv.set_size(size);
+            }
+        }
+    }
 }
 
 /// Build the download handler for a service or popup webview.
@@ -213,9 +245,10 @@ fn shortcut_index(code: tauri_plugin_global_shortcut::Code) -> Option<usize> {
 /// complaint). Since WebView2 SDK 1.0.2739 the host can take over:
 /// NotificationReceived fires for every notification; marking it
 /// Handled suppresses WebView2's toast, and the host then reports
-/// shown / clicked / closed back to the page itself. Sodium shows its
-/// own clickable banner in the top bar (plus a taskbar flash) and
-/// reports the click, so the page opens the exact conversation.
+/// shown / clicked / closed back to the page itself. Sodium shows a
+/// real Windows toast (via the notification plugin) plus a big
+/// clickable strip under its top bar, and reports the strip's click,
+/// so the page opens the exact conversation.
 ///
 /// Every failure path deliberately keeps the old behaviour: if the
 /// interface is missing (older WebView2 runtime) or any read fails,
@@ -264,8 +297,20 @@ fn hook_notifications(
                 let _ = app.emit_to(
                     UI_LABEL,
                     "notification-received",
-                    (id.clone(), title, body),
+                    (id.clone(), title.clone(), body.clone()),
                 );
+                // Show a real Windows toast too (v0.4.1): the first
+                // version of this takeover only lit a small banner
+                // inside Sodium's top bar, which Agung found too easy
+                // to miss — a notification should pop over other apps
+                // like a normal Windows one. The in-app strip (now
+                // big, under the top bar) remains the reliable click
+                // target that opens the exact conversation.
+                {
+                    use tauri_plugin_notification::NotificationExt;
+                    let t = if title.is_empty() { id.clone() } else { title };
+                    let _ = app.notification().builder().title(t).body(body).show();
+                }
                 if let Some(window) = app.get_window("main") {
                     let _ = window
                         .request_user_attention(Some(tauri::UserAttentionType::Informational));
@@ -487,7 +532,7 @@ async fn switch_service(
                     (id_for_title.clone(), count),
                 );
             });
-        let (pos, size) = service_bounds(&window);
+        let (pos, size) = service_bounds(&window, *state.notif_strip.lock().unwrap());
         window
             .add_child(builder, pos, size)
             .map_err(|e| e.to_string())?;
@@ -497,7 +542,7 @@ async fn switch_service(
             hook_notifications(&app, &state.notifications, &id, &wv);
         }
     } else if let Some(wv) = app.get_webview(&label) {
-        let (pos, size) = service_bounds(&window);
+        let (pos, size) = service_bounds(&window, *state.notif_strip.lock().unwrap());
         let _ = wv.set_position(pos);
         let _ = wv.set_size(size);
         let _ = wv.set_focus();
@@ -772,6 +817,9 @@ pub fn run() {
                 })
                 .build(),
         )
+        // System notifications (v0.4.1): Sodium shows a real Windows
+        // toast for each service notification it takes over.
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState {
             max_alive: Mutex::new(1),
             zoom: Mutex::new(HashMap::new()),
@@ -799,6 +847,21 @@ pub fn run() {
                     .handle()
                     .global_shortcut()
                     .register_multiple(digit_shortcuts());
+            }
+            // A tap on Sodium's system toast brings the main window
+            // forward (the in-app strip then offers the click that
+            // opens the exact conversation). Best effort: Windows only
+            // reports taps while the toast is on screen.
+            {
+                use tauri_plugin_notification::NotificationExt;
+                let handle = app.handle().clone();
+                let _ = app.notification().on_action(move |_| {
+                    if let Some(w) = handle.get_window("main") {
+                        let _ = w.unminimize();
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                });
             }
             let size = window.inner_size()?;
             let ui_builder = WebviewBuilder::new(UI_LABEL, WebviewUrl::App("index.html".into()));
@@ -831,7 +894,8 @@ pub fn run() {
             open_external,
             alive_services,
             notification_action,
-            set_service_dim
+            set_service_dim,
+            set_notif_strip
         ])
         .on_window_event(|window, event| {
             // Keep the UI and service webviews filling the main window.
@@ -864,7 +928,8 @@ pub fn run() {
             if let WindowEvent::Resized(_) = event {
                 let app = window.app_handle();
                 let (ui_pos, ui_size) = full_bounds(window);
-                let (pos, size) = service_bounds(window);
+                let strip = *app.state::<AppState>().notif_strip.lock().unwrap();
+                let (pos, size) = service_bounds(window, strip);
                 for wv in app.webviews().values() {
                     if wv.label() == UI_LABEL {
                         let _ = wv.set_position(ui_pos);

@@ -15,10 +15,6 @@
   <header id="topbar">
     <div id="activeName">Sodium</div>
     <div id="toast" hidden></div>
-    <div id="notifToast" hidden>
-      <span id="notifText"></span>
-      <button id="notifClose" title="Abaikan notifikasi" aria-label="Abaikan notifikasi">✕</button>
-    </div>
     <div class="topTools">
       <div class="zoomCtl" title="Zoom tampilan layanan">
         <button id="zoomOut" title="Zoom out" aria-label="Perkecil zoom">−</button>
@@ -46,12 +42,33 @@
       <button id="linkClose" title="Tutup popup" aria-label="Tutup popup">✕</button>
     </div>
   </div>
+
+  <div id="notifStrip" hidden>
+    <span id="notifText"></span>
+    <button id="notifClose" title="Abaikan notifikasi" aria-label="Abaikan notifikasi">✕</button>
+  </div>
   <main id="welcome">
     <div class="naTile">Na</div>
     <h1>Sodium</h1>
-    <p>Semua layanan sosial &amp; chat lo, dalam satu tempat, dengan cara yang ringan.</p>
-    <p class="muted">Pilih layanan di kiri untuk mulai. Layanan lain akan dimatikan total
-    (bukan disembunyikan) supaya RAM tetap rata, kecuali yang lo pin.</p>
+    <p class="tagline">Semua layanan chat dan sosial Anda dalam satu jendela yang ringan.</p>
+    <div class="featureCards">
+      <div class="fCard">
+        <div class="fIcon"><svg viewBox="0 0 24 24" width="20" height="20" fill="#f5c518" aria-hidden="true"><path d="M13 2 4.5 13.5H11L9.8 22l8.7-11.5H12L13 2z"/></svg></div>
+        <div class="fTitle">Ringan</div>
+        <p>Hanya layanan yang sedang dibuka yang berjalan. Layanan lain mati sepenuhnya, sehingga pemakaian RAM tetap rendah.</p>
+      </div>
+      <div class="fCard">
+        <div class="fIcon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#f5c518" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5"/><circle cx="17" cy="9" r="2.4"/><path d="M16.2 14.6c2.2.3 3.7 1.7 4.2 4.1"/></svg></div>
+        <div class="fTitle">Banyak akun</div>
+        <p>Tambahkan layanan yang sama berkali-kali untuk akun yang berbeda, masing-masing dengan sesi masuknya sendiri.</p>
+      </div>
+      <div class="fCard">
+        <div class="fIcon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#f5c518" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l1.5 3h-15L6 16z"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></div>
+        <div class="fTitle">Notifikasi asli</div>
+        <p>Pesan masuk tampil sebagai notifikasi Windows. Klik notifikasinya, dan percakapan yang dimaksud langsung terbuka.</p>
+      </div>
+    </div>
+    <p class="muted welcomeHint">Pilih layanan di sidebar untuk memulai · Ctrl+1–9 untuk berpindah cepat · Klik + untuk menambah layanan</p>
     <p class="muted" id="ramNote"></p>
   </main>
 

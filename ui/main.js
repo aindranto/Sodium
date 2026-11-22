@@ -326,7 +326,7 @@ async function switchTo(s) {
     el("ramNote").classList.remove("error");
     console.log("Sodium alive webviews:", alive);
   } catch (err) {
-    el("welcome").style.display = "block";
+    el("welcome").style.display = "";
     el("ramNote").textContent = "Gagal membuka " + s.name + ": " + err;
     el("ramNote").classList.add("error");
   }
@@ -535,7 +535,7 @@ async function setServiceDisabled(s, off) {
       activeId = null;
       if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive");
       el("activeName").textContent = "Sodium";
-      el("welcome").style.display = "block";
+      el("welcome").style.display = "";
       showZoom();
     }
   }
@@ -569,7 +569,7 @@ async function deleteService(id) {
   if (activeId === id) {
     activeId = null;
     el("activeName").textContent = "Sodium";
-    el("welcome").style.display = "block";
+    el("welcome").style.display = "";
   }
   if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive");
   await invoke("close_service", { id });
@@ -925,22 +925,26 @@ window.__TAURI__.event.listen("download-finished", (e) => {
   toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
 });
 
-// Notification banner (v0.3.3): WebView2's own notification toast
+// Notifications (v0.3.3, reworked v0.4.1): WebView2's own toast
 // could not deliver its click to a hidden/destroyed webview, so Rust
-// now takes notifications over and forwards them here. Clicking the
-// banner reports the click back to the page (WhatsApp then opens the
-// exact chat) and switches to the service; the ✕ or a 30 s timeout
-// reports it dismissed instead.
+// takes notifications over. It shows a real Windows toast (via the
+// notification plugin) and forwards the notification here, where a
+// big yellow strip appears under the top bar — Rust moves the
+// service webviews down so the strip stays visible and clickable.
+// Clicking the strip reports the click back to the page (WhatsApp
+// then opens the exact chat) and switches to the service; the ✕ or
+// a 30 s timeout reports it dismissed instead.
 let notifTimer = null;
 let notifPending = null; // service id with an unanswered notification
-function hideNotifBanner() {
-  el("notifToast").hidden = true;
+function hideNotifStrip() {
+  el("notifStrip").hidden = true;
   notifPending = null;
   clearTimeout(notifTimer);
+  invoke("set_notif_strip", { visible: false }).catch(() => {});
 }
 async function answerNotification(clicked) {
   const id = notifPending;
-  hideNotifBanner();
+  hideNotifStrip();
   if (!id) return;
   try { await invoke("notification_action", { id, clicked }); } catch { /* page may be gone */ }
   if (clicked) {
@@ -956,13 +960,14 @@ window.__TAURI__.event.listen("notification-received", (e) => {
   notifPending = id;
   el("notifText").textContent =
     name + (title ? " — " + title : "") + (body ? ": " + body : "");
-  el("notifToast").title =
+  el("notifStrip").title =
     (title ? title + "\n" : "") + (body || "") + "\nKlik untuk membuka";
-  el("notifToast").hidden = false;
+  el("notifStrip").hidden = false;
+  invoke("set_notif_strip", { visible: true }).catch(() => {});
   clearTimeout(notifTimer);
   notifTimer = setTimeout(() => answerNotification(false), 30000);
 });
-el("notifToast").addEventListener("click", () => answerNotification(true));
+el("notifStrip").addEventListener("click", () => answerNotification(true));
 el("notifClose").addEventListener("click", (e) => {
   e.stopPropagation();
   answerNotification(false);

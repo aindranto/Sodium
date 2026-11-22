@@ -35,7 +35,7 @@ Analisis lengkap mengenai kode sumber Ferdium dan pertimbangan desainnya tersedi
 - **Ganti nama** layanan melalui panel Kelola layanan: nama bebas tanpa memengaruhi sesi masuk, pin, atau zoom (semua terikat pada id layanan, bukan nama). Layanan custom URL tanpa logo katalog mengambil favicon situsnya secara otomatis.
 - **Panel Kelola layanan** (tombol di sidebar, di bawah tombol "+"): semua pengaturan layanan dalam satu tempat — edit nama, ikon, dan **URL** (webview ditutup dan dibuka ulang bila URL berubah), ubah urutan layanan, pin, nonaktifkan, duplikat, dan hapus — plus saklar menampilkan nama layanan di bawah ikon sidebar. Menu klik kanan kini ramping (Pin/Unpin, Nonaktifkan/Aktifkan lagi, Kelola layanan), dan layanan di belakangnya hanya di-dim, tidak disembunyikan.
 - Notifikasi situs dapat diaktifkan, karena Sodium menjawab permintaan izin notifikasi dengan benar.
-- **Klik notifikasi membuka percakapan**: Sodium mengambil alih notifikasi layanan (banner kuning di bar atas + kedipan tombol taskbar); mengklik banner membuka layanannya dan meneruskan klik ke halaman, sehingga misalnya WhatsApp langsung membuka chat yang dimaksud — bukan lagi toast yang kliknya hilang saat webview layanan sedang mati.
+- **Notifikasi Windows asli + klik membuka percakapan**: Sodium mengambil alih notifikasi layanan dan menampilkannya sebagai toast Windows beneran (muncul di atas aplikasi lain, masuk Action Center) plus strip kuning besar di bawah bar atas; mengklik strip membuka layanannya dan meneruskan klik ke halaman, sehingga misalnya WhatsApp langsung membuka chat yang dimaksud — bukan lagi toast yang kliknya hilang saat webview layanan sedang mati.
 
 Belum tersedia: system tray dan pembaruan otomatis.
 
