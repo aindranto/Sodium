@@ -154,6 +154,23 @@ function processIconFile(file) {
 // ---------------------------------------------------------------------------
 // Sidebar
 // ---------------------------------------------------------------------------
+// Open the right-click menu for a service. Used by the contextmenu
+// event, by clicking a disabled service, and from the keyboard
+// (ContextMenu key / Shift+F10 on the focused sidebar button), so the
+// menu is reachable without a mouse too.
+async function openCtx(s) {
+  ctxService = s;
+  el("ctxTitle").textContent = s.name;
+  el("ctxPin").textContent = pinned.has(s.id) ? "Unpin" : "Pin (tetap hidup buat notif)";
+  el("ctxDisable").textContent = disabled.has(s.id) ? "Aktifkan lagi" : "Nonaktifkan (matikan total sementara)";
+  // Delete is a two-step action (see the ctxDelete handler): every fresh
+  // opening of the menu starts disarmed.
+  const del = el("ctxDelete");
+  del.dataset.armed = "";
+  del.textContent = "Hapus layanan";
+  await openPanel(ctxPanel);
+}
+
 function render() {
   nav.innerHTML = "";
   for (const s of services) {
@@ -175,22 +192,20 @@ function render() {
       if (disabled.has(s.id)) {
         // Disabled services cannot be opened; a click opens the menu
         // where "Aktifkan lagi" lives, so the way back is one click away.
-        ctxService = s;
-        el("ctxTitle").textContent = s.name;
-        el("ctxPin").textContent = pinned.has(s.id) ? "Unpin" : "Pin (tetap hidup buat notif)";
-        el("ctxDisable").textContent = "Aktifkan lagi";
-        await openPanel(ctxPanel);
+        await openCtx(s);
         return;
       }
       switchTo(s);
     });
     b.addEventListener("contextmenu", async (e) => {
       e.preventDefault();
-      ctxService = s;
-      el("ctxTitle").textContent = s.name;
-      el("ctxPin").textContent = pinned.has(s.id) ? "Unpin" : "Pin (tetap hidup buat notif)";
-      el("ctxDisable").textContent = disabled.has(s.id) ? "Aktifkan lagi" : "Nonaktifkan (matikan total sementara)";
-      await openPanel(ctxPanel);
+      await openCtx(s);
+    });
+    b.addEventListener("keydown", async (e) => {
+      if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+        e.preventDefault();
+        await openCtx(s);
+      }
     });
     nav.appendChild(b);
   }
@@ -201,6 +216,7 @@ async function switchTo(s) {
   if (linkPopupOpen) await closeLinkPopup();
   if (allPanels.some(p => !p.hidden)) await closePanels();
   activeId = s.id; render();
+  localStorage.setItem("sodium.lastActive", s.id);
   el("activeName").textContent = s.name;
   el("welcome").style.display = "none";
   try {
@@ -367,6 +383,7 @@ el("ctxDisable").addEventListener("click", async () => {
     await invoke("close_service", { id });
     if (activeId === id) {
       activeId = null;
+      if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive");
       el("activeName").textContent = "Sodium";
       el("welcome").style.display = "block";
       showZoom();
@@ -378,12 +395,21 @@ el("ctxDisable").addEventListener("click", async () => {
 });
 el("ctxDelete").addEventListener("click", async () => {
   if (!ctxService) return;
+  // Two-step delete: the first click arms the button, the second one
+  // really deletes. The profile folder stays on disk either way, so
+  // re-adding the service later restores the login session.
+  if (!el("ctxDelete").dataset.armed) {
+    el("ctxDelete").dataset.armed = "1";
+    el("ctxDelete").textContent = "Yakin hapus? Klik sekali lagi";
+    return;
+  }
   const id = ctxService.id;
   services = services.filter(x => x.id !== id);
   store.save(services);
   if (pinned.has(id)) { pinned.delete(id); store.savePinned(pinned); }
   if (disabled.has(id)) { disabled.delete(id); store.saveDisabled(disabled); }
   if (activeId === id) activeId = null;
+  if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive");
   await invoke("close_service", { id });
   render();
   await closePanels();
@@ -487,8 +513,13 @@ window.__TAURI__.event.listen("download-finished", (e) => {
   toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
 });
 
-// Keyboard shortcuts: Ctrl/Cmd + 1..9
-window.addEventListener("keydown", (e) => {
+// Keyboard: Escape closes the link popup or any open panel;
+// Ctrl/Cmd + 1..9 switches services.
+window.addEventListener("keydown", async (e) => {
+  if (e.key === "Escape") {
+    if (linkPopupOpen) { await closeLinkPopup(); return; }
+    if (allPanels.some(p => !p.hidden)) { await closePanels(); return; }
+  }
   if ((e.ctrlKey || e.metaKey) && /^[1-9]$/.test(e.key)) {
     const s = services[Number(e.key) - 1]; if (s) switchTo(s);
   }
@@ -541,4 +572,12 @@ for (const id of pinned) invoke("set_pinned", { id, pinned: true });
 render();
 
 // First run (or first run of v0.2.0+): show the service picker once.
-if (!localStorage.getItem("sodium.onboarded")) openPicker();
+// Otherwise reopen the service that was active when Sodium was closed,
+// like Ferdium does, instead of landing on the welcome screen.
+if (!localStorage.getItem("sodium.onboarded")) {
+  openPicker();
+} else {
+  const lastId = localStorage.getItem("sodium.lastActive");
+  const last = services.find(s => s.id === lastId);
+  if (last && !disabled.has(last.id)) switchTo(last);
+}
