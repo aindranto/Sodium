@@ -34,7 +34,7 @@ const CATALOG = [
 const ICON_PALETTE = ["💬","✈️","📸","🎮","✉️","🎵","📺","👍","🎧","🐙","💼","🤖","📌","🎬","🛍️","🛒","❤️","🔥","✅","📅","👥","🌐","💡","📰"];
 
 const DEFAULT_SERVICES = [
-  // Agung's daily driver, pre-added. Everything else comes from the picker.
+  // WhatsApp is pre-added; everything else comes from the picker.
   { id: "whatsapp", name: "WhatsApp", url: "https://web.whatsapp.com/", icon: "💬", color: "#1faa55", brand: "whatsapp", iconColor: "#ffffff" },
 ];
 
@@ -64,7 +64,6 @@ const unread = new Map();
 let pinned = store.pinned();
 let disabled = store.disabled();
 let activeId = null;
-// Show each service's name under its sidebar icon (Kelola panel toggle).
 let showNames = localStorage.getItem("sodium.showNames") === "1";
 
 const nav = document.getElementById("services");
@@ -94,14 +93,12 @@ function hostOf(u) {
   if (changed) store.save(services);
 })();
 
-// ---------------------------------------------------------------------------
 // Panels (service picker / right-click menu / icon changer)
 //
 // Service webviews are NATIVE controls layered on top of this UI webview,
 // so any panel rendered here would sit *behind* e.g. the WhatsApp webview
 // and look like the button does nothing. While a panel is open we ask Rust
 // to hide the service webviews (hide, not destroy: sessions stay alive).
-// ---------------------------------------------------------------------------
 const pickerPanel = el("pickerPanel");
 const ctxPanel = el("ctxPanel");
 const iconPanel = el("iconPanel");
@@ -135,11 +132,7 @@ async function closePanels() {
 document.addEventListener("click", (e) => {
   const open = allPanels.find(p => !p.hidden);
   if (!open) return;
-  // composedPath() is the click's original route through the DOM,
-  // recorded when the click happened. contains(e.target) is not
-  // enough: a handler may re-render part of a panel mid-click (the
-  // picker grid did), detaching e.target and making an inside click
-  // look like an outside one. That was the v0.3.0 picker bug.
+  // Use composedPath: a handler may detach e.target mid-click.
   const path = e.composedPath ? e.composedPath() : [e.target];
   if (path.includes(open)) return;
   if (path.some(n => n && n.id === "sidebar")) return;
@@ -190,13 +183,7 @@ function processIconFile(file) {
   });
 }
 
-// ---------------------------------------------------------------------------
 // Sidebar
-// ---------------------------------------------------------------------------
-// Open the right-click menu for a service. Used by the contextmenu
-// event, by clicking a disabled service, and from the keyboard
-// (ContextMenu key / Shift+F10 on the focused sidebar button), so the
-// menu is reachable without a mouse too.
 // The visual for a service without an uploaded image: the real brand
 // logo (SVG path from icons.js) drawn in iconColor, or the text icon
 // (emoji / letters) in iconColor. Uploaded images always win: render()
@@ -215,13 +202,8 @@ function iconVisual(s, px) {
   return sp;
 }
 
-// The right-click menu is a panel like the others (v0.4.4: back to
-// the classic mechanism after the dim variant in v0.4.0 and the
-// floating-window variant in v0.4.2 both misbehaved): opening it
-// hides the service webviews via openPanel, and it is shown as a
-// centred modal (class "picker") over the dimmed backdrop. Its items
-// are the slim set from v0.4.0: pin, disable, and the door to the
-// Kelola panel where everything else lives.
+// The right-click menu is a panel like the others: opening it
+// hides the service webviews; it shows as a centred modal.
 async function openCtx(s) {
   ctxService = s;
   el("ctxTitle").textContent = s.name;
@@ -317,9 +299,7 @@ async function switchTo(s) {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Service picker (first run + "+" button)
-// ---------------------------------------------------------------------------
 const grid = el("pickerGrid");
 const searchInput = el("pickerSearch");
 
@@ -422,7 +402,6 @@ el("addBtn").addEventListener("click", openPicker);
 searchInput.addEventListener("input", renderPicker);
 el("pickerSkip").addEventListener("click", async () => { markOnboarded(); await closePanels(); });
 
-// Custom URL form inside the picker
 buildPalette(el("customPalette"), (e) => { el("cIcon").value = e; clearCustomImg(); });
 let customImg = null;
 function clearCustomImg() {
@@ -460,16 +439,9 @@ el("customAdd").addEventListener("click", async () => {
   await closePanels();
 });
 
-// ---------------------------------------------------------------------------
-// Favicons for services with no brand logo and no uploaded image
-// (custom URL services). Best effort, layered: Google favicon service
-// (PNG), DuckDuckGo icons, the site's own /favicon.ico. A response
-// that can be read back (CORS-readable) is stored as a data URL so
-// the icon also works offline; if none can be read, the Google URL
-// is stored as a remote image and render() falls back to the text
-// icon when it fails to load. Runs once per service: the result is
-// stored in svc.img, so it never refetches.
-// ---------------------------------------------------------------------------
+// Favicons for custom services, best effort in order: Google,
+// DuckDuckGo, the site's own /favicon.ico. CORS-readable results
+// are stored as data URLs (work offline); runs once, kept in svc.img.
 function faviconSources(host) {
   return [
     "https://www.google.com/s2/favicons?domain=" + host + "&sz=128",
@@ -510,10 +482,8 @@ async function fetchFaviconFor(s) {
   store.save(services); render();
 }
 
-// ---------------------------------------------------------------------------
 // Service actions, shared by the right-click menu (quick actions) and
 // the Kelola layanan panel (full management, v0.4.0).
-// ---------------------------------------------------------------------------
 function togglePin(s) {
   const nowPinned = !pinned.has(s.id);
   if (nowPinned) pinned.add(s.id); else pinned.delete(s.id);
@@ -638,12 +608,10 @@ function refreshIconColors() {
 }
 el("iconText").addEventListener("input", refreshIconColors);
 
-// ---------------------------------------------------------------------------
 // Kelola layanan panel (v0.4.0): every service setting in one place —
 // edit (name / icon / URL), reorder, pin, disable, duplicate, delete,
 // plus the global "show names in the sidebar" toggle. Opened from the
 // sidebar button under "+", or from the right-click menu.
-// ---------------------------------------------------------------------------
 const manageList = el("manageList");
 let manageEditId = null;      // service id whose edit form is open
 let manageDeleteArmed = null; // service id whose Hapus awaits a confirm click
@@ -775,12 +743,8 @@ function buildManageForm(s) {
   return form;
 }
 
-// Saving an edit: the name is a label only (everything is keyed by
-// id, so renaming never logs anyone out). A changed URL closes the
-// webview so the next open uses the new address; if the changed
-// service is the active one it reopens at once. A fetched favicon
-// belongs to the old host, so it is dropped and refetched; an
-// uploaded icon is kept.
+// The name is a label only (everything is keyed by id). A changed
+// URL closes the webview; a fetched favicon is dropped and refetched.
 async function saveManageEdit(s, nameIn, urlIn) {
   const name = nameIn.value.trim();
   let url = urlIn.value.trim();
@@ -809,7 +773,6 @@ async function saveManageEdit(s, nameIn, urlIn) {
   }
 }
 
-// Icon changer panel
 buildPalette(el("iconPalette"), async (e) => {
   if (!iconTarget) return;
   iconTarget.icon = e;
@@ -850,14 +813,12 @@ el("iconRemoveImg").addEventListener("click", async () => {
   await closePanels();
 });
 
-// ---------------------------------------------------------------------------
 // Link popup
 //
 // Links inside a service that ask for a new window (target=_blank,
 // window.open) are denied by Rust and reported here as a "link-clicked"
 // event instead. The UI shows the link bar and asks Rust to open the
 // popup webview floating over the active service.
-// ---------------------------------------------------------------------------
 const linkBar = el("linkBar");
 let linkPopupOpen = false;
 let currentLink = "";
@@ -912,9 +873,7 @@ window.__TAURI__.event.listen("download-finished", (e) => {
   toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
 });
 
-// Version label in the top bar, read from the app itself so it can
-// never go stale or disagree with the installed build. If the read
-// fails the label stays empty: no version shown beats a wrong one.
+// Read the version from the app so it cannot go stale.
 window.__TAURI__.app.getVersion()
   .then(v => { el("appVersion").textContent = "Sodium v" + v; })
   .catch(() => {});
