@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse, WebviewBuilder};
+use tauri::webview::{
+    DownloadEvent, NewWindowResponse, PermissionKind, PermissionResponse, WebviewBuilder,
+};
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewUrl, WindowEvent};
 
 /// Width of the sidebar rendered by Sodium's own UI (ui/index.html).
@@ -41,6 +43,9 @@ struct AppState {
     active: Mutex<Option<String>>,
     /// Whether the link popup is currently open over the active service.
     link_open: Mutex<bool>,
+    /// Folder the Save As dialog starts in: the user's Downloads folder
+    /// at first, then the last folder a download was saved to.
+    download_dir: std::sync::Arc<Mutex<std::path::PathBuf>>,
     /// The main window, created in the setup hook as a plain `tauri::Window`
     /// (not a WebviewWindow) because only `Window` can host child webviews
     /// via `add_child`.
@@ -77,6 +82,60 @@ fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<
         LogicalPosition::new(SIDEBAR_W, TOPBAR_H),
         LogicalSize::new(w - SIDEBAR_W, h - TOPBAR_H),
     )
+}
+
+/// Build the download handler for a service or popup webview.
+///
+/// Downloads inside a webview (e.g. a file a friend sent on WhatsApp)
+/// silently go nowhere unless the host answers WebView2's download
+/// event. Answer it with the native Save As dialog, starting in the
+/// Downloads folder (then in the last folder used) with the file name
+/// the site suggests; cancelling the dialog cancels the download. When
+/// a download finishes, the UI is told the saved path so it can show a
+/// small toast.
+fn make_download_handler(
+    app: tauri::AppHandle,
+    download_dir: std::sync::Arc<Mutex<std::path::PathBuf>>,
+) -> impl FnMut(tauri::Webview, DownloadEvent) -> bool + Send + 'static {
+    move |_webview, event| {
+        match event {
+            DownloadEvent::Requested { destination, .. } => {
+                let suggested = destination
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .filter(|n| !n.trim().is_empty())
+                    .unwrap_or_else(|| "sodium-download".to_string());
+                let start_dir = download_dir.lock().unwrap().clone();
+                let mut dialog = rfd::FileDialog::new().set_file_name(&suggested);
+                if !start_dir.as_os_str().is_empty() {
+                    dialog = dialog.set_directory(&start_dir);
+                }
+                match dialog.save_file() {
+                    Some(path) => {
+                        if let Some(parent) = path.parent() {
+                            *download_dir.lock().unwrap() = parent.to_path_buf();
+                        }
+                        *destination = path;
+                        true
+                    }
+                    None => false,
+                }
+            }
+            DownloadEvent::Finished { path, success, .. } => {
+                if success {
+                    if let Some(p) = &path {
+                        let _ = app.emit_to(
+                            UI_LABEL,
+                            "download-finished",
+                            p.to_string_lossy().into_owned(),
+                        );
+                    }
+                }
+                true
+            }
+            _ => true,
+        }
+    }
 }
 
 /// Bounds for the link popup: floating over the content area with a
@@ -134,7 +193,11 @@ async fn switch_service(
             .on_new_window(move |u, _features| {
                 let _ = app_for_links.emit_to(UI_LABEL, "link-clicked", u.to_string());
                 NewWindowResponse::Deny
-            });
+            })
+            .on_download(make_download_handler(
+                app.clone(),
+                state.download_dir.clone(),
+            ));
         let (pos, size) = service_bounds(&window);
         window
             .add_child(builder, pos, size)
@@ -281,7 +344,11 @@ async fn open_link_popup(
             .on_new_window(move |u, _features| {
                 let _ = app_for_links.emit_to(UI_LABEL, "link-clicked", u.to_string());
                 NewWindowResponse::Deny
-            });
+            })
+            .on_download(make_download_handler(
+                app.clone(),
+                state.download_dir.clone(),
+            ));
         let (pos, size) = popup_bounds(&window);
         window
             .add_child(builder, pos, size)
@@ -390,6 +457,9 @@ pub fn run() {
             window.add_child(ui_builder, LogicalPosition::new(0.0, 0.0), size)?;
             let state = app.state::<AppState>();
             *state.main_window.lock().unwrap() = Some(window);
+            if let Ok(dir) = app.path().download_dir() {
+                *state.download_dir.lock().unwrap() = dir;
+            }
             Ok(())
         })
         // WebView2 denies web permission requests by default when the host
