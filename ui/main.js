@@ -103,7 +103,8 @@ function hostOf(u) {
 const pickerPanel = el("pickerPanel");
 const ctxPanel = el("ctxPanel");
 const iconPanel = el("iconPanel");
-const allPanels = [pickerPanel, ctxPanel, iconPanel];
+const renamePanel = el("renamePanel");
+const allPanels = [pickerPanel, ctxPanel, iconPanel, renamePanel];
 let ctxService = null;
 let iconTarget = null;
 
@@ -234,6 +235,12 @@ function render() {
     if (s.img) {
       const im = document.createElement("img");
       im.className = "svcImg"; im.src = s.img; im.alt = "";
+      // A remote favicon URL can fail to load (offline, site gone):
+      // fall back to the text/brand icon instead of a broken image.
+      im.onerror = () => {
+        im.replaceWith(iconVisual(s, 26));
+        if (s.color) b.style.background = s.color;
+      };
       b.appendChild(im);
     } else {
       b.appendChild(iconVisual(s, 26));
@@ -416,12 +423,62 @@ el("customAdd").addEventListener("click", async () => {
   const svc = { id, name, url, icon: icon || name.slice(0, 2) };
   if (customImg) svc.img = customImg;
   services.push(svc);
+  if (!customImg) fetchFaviconFor(svc);
   store.save(services); render();
   el("cName").value = ""; el("cUrl").value = ""; el("cIcon").value = "";
   clearCustomImg();
   markOnboarded();
   await closePanels();
 });
+
+// ---------------------------------------------------------------------------
+// Favicons for services with no brand logo and no uploaded image
+// (custom URL services). Best effort, layered: Google favicon service
+// (PNG), DuckDuckGo icons, the site's own /favicon.ico. A response
+// that can be read back (CORS-readable) is stored as a data URL so
+// the icon also works offline; if none can be read, the Google URL
+// is stored as a remote image and render() falls back to the text
+// icon when it fails to load. Runs once per service: the result is
+// stored in svc.img, so it never refetches.
+// ---------------------------------------------------------------------------
+function faviconSources(host) {
+  return [
+    "https://www.google.com/s2/favicons?domain=" + host + "&sz=128",
+    "https://icons.duckduckgo.com/ip3/" + host + ".ico",
+    "https://" + host + "/favicon.ico",
+  ];
+}
+function faviconAsDataUrl(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    const to = setTimeout(() => resolve(null), 6000);
+    img.onload = () => {
+      clearTimeout(to);
+      try {
+        const w = Math.min(64, img.naturalWidth || 64);
+        const h = Math.min(64, img.naturalHeight || 64);
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/png"));
+      } catch { resolve(null); }
+    };
+    img.onerror = () => { clearTimeout(to); resolve(null); };
+    img.src = url;
+  });
+}
+async function fetchFaviconFor(s) {
+  if (s.img || s.brand) return;
+  const host = hostOf(s.url);
+  if (!host) return;
+  for (const u of faviconSources(host)) {
+    const d = await faviconAsDataUrl(u);
+    if (d) { s.img = d; store.save(services); render(); return; }
+  }
+  s.img = faviconSources(host)[0];
+  store.save(services); render();
+}
 
 // ---------------------------------------------------------------------------
 // Right-click panel: pin / change icon / delete
@@ -494,6 +551,34 @@ function refreshIconColors() {
   }
 }
 el("iconText").addEventListener("input", refreshIconColors);
+// Rename: the name is a label only. Profile folder, pin, zoom and
+// disabled state are all keyed by the service id, so renaming never
+// logs anyone out or loses a setting.
+let renameTarget = null;
+el("ctxRename").addEventListener("click", async () => {
+  if (!ctxService) return;
+  renameTarget = ctxService;
+  el("renameTitle").textContent = "Ganti nama: " + ctxService.name;
+  el("renameText").value = ctxService.name;
+  await openPanel(renamePanel);
+  el("renameText").select();
+});
+async function saveRename() {
+  if (!renameTarget) return;
+  const v = el("renameText").value.trim();
+  if (!v) return;
+  if (v !== renameTarget.name) {
+    renameTarget.name = v;
+    store.save(services);
+    if (activeId === renameTarget.id) el("activeName").textContent = v;
+    render();
+  }
+  await closePanels();
+}
+el("renameSave").addEventListener("click", saveRename);
+el("renameCancel").addEventListener("click", closePanels);
+el("renameText").addEventListener("keydown", (e) => { if (e.key === "Enter") saveRename(); });
+
 // Duplicate with a fresh, empty profile: same URL, icon and colours,
 // next free number in the name ("WhatsApp 2", "WhatsApp 3", ...). No
 // session or cookie is copied, so the copy is a clean sign-in for a
@@ -738,6 +823,10 @@ maxAliveSel.addEventListener("change", () => {
 // Restore pinned flags into the Rust side on startup
 for (const id of pinned) invoke("set_pinned", { id, pinned: true });
 render();
+
+// One-time favicon fetch for services that still have no icon image
+// (new custom services fetch theirs when they are added).
+for (const s of services) fetchFaviconFor(s);
 
 // First run (or first run of v0.2.0+): show the service picker once.
 // Otherwise reopen the service that was active when Sodium was closed,

@@ -32,6 +32,7 @@ Analisis lengkap mengenai kode sumber Ferdium dan pertimbangan desainnya tersedi
 - **Bar atas** berisi nama layanan yang sedang aktif, **zoom** tampilan layanan (50%–200%, tersimpan secara permanen), dan pengaturan *Hidup bareng*.
 - **Pin** layanan agar selalu aktif (misalnya WhatsApp untuk notifikasi), **nonaktifkan** layanan untuk mematikannya secara total untuk sementara tanpa kehilangan sesi masuk, serta pintasan **Ctrl+1..9** untuk berpindah layanan.
 - **Duplikat (akun beda)** melalui menu klik kanan pada ikon layanan: menyalin URL dan ikon dengan profil yang masih kosong, untuk masuk dengan akun lain pada layanan yang sama.
+- **Ganti nama** layanan melalui menu klik kanan: nama bebas tanpa memengaruhi sesi masuk, pin, atau zoom (semua terikat pada id layanan, bukan nama). Layanan custom URL tanpa logo katalog mengambil favicon situsnya secara otomatis.
 - Notifikasi situs dapat diaktifkan, karena Sodium menjawab permintaan izin notifikasi dengan benar.
 
 Belum tersedia: system tray, jembatan notifikasi native, dan pembaruan otomatis.
