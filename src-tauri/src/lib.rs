@@ -546,7 +546,7 @@ pub fn run() {
                 .with_handler(|app, shortcut, event| {
                     use tauri_plugin_global_shortcut::ShortcutState;
                     if event.state() == ShortcutState::Pressed {
-                        if let Some(idx) = shortcut_index(shortcut.key()) {
+                        if let Some(idx) = shortcut_index(shortcut.key) {
                             let _ = app.emit_to(UI_LABEL, "shortcut-switch", idx);
                         }
                     }
