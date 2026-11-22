@@ -57,7 +57,23 @@ fn label_for(id: &str) -> String {
 }
 
 fn id_from_label(label: &str) -> &str {
-    label.trim_start_matches("service-")
+    label.strip_prefix("service-").unwrap_or(label)
+}
+
+/// Service ids are minted by the UI (catalog slugs, "<slug>-<n>"
+/// clones, "custom-<base36>"): lowercase letters, digits, dashes.
+/// Anything else is rejected before it can reach a filesystem path.
+fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// Only web URLs may be loaded into a service or popup webview.
+fn valid_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    lower.starts_with("https://") || lower.starts_with("http://")
 }
 
 fn logical_inner_size(window: &tauri::Window) -> LogicalSize<f64> {
@@ -85,15 +101,10 @@ fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<
     )
 }
 
-/// Build the download handler for a service or popup webview.
-///
-/// Downloads inside a webview (e.g. a file a friend sent on WhatsApp)
-/// silently go nowhere unless the host answers WebView2's download
-/// event. Answer it with the native Save As dialog, starting in the
-/// Downloads folder (then in the last folder used) with the file name
-/// the site suggests; cancelling the dialog cancels the download. When
-/// a download finishes, the UI is told the saved path so it can show a
-/// small toast.
+/// Download handler for a service or popup webview: without it,
+/// downloads silently go nowhere. Answers with the native Save As
+/// dialog (Downloads first, then the last folder used); a finished
+/// download is reported to the UI for its toast.
 fn make_download_handler(
     app: tauri::AppHandle,
     download_dir: std::sync::Arc<Mutex<std::path::PathBuf>>,
@@ -178,27 +189,19 @@ fn shortcut_index(code: tauri_plugin_global_shortcut::Code) -> Option<usize> {
     }
 }
 
-/// Unread count from a service page title. Services put it in the
-/// title as a leading "(n)" (WhatsApp, Telegram, Messenger, Discord)
-/// or as "Inbox (n)" (Gmail). Anything else means no badge; counts are
-/// capped at 999, which also keeps title years like "(2024)" from
-/// being misread as unread counts.
+/// Unread count from a service page title: the first "(n)" in the
+/// first 40 characters — "(3) WhatsApp", "Inbox (3)", "Kotak Masuk
+/// (3)". Capped at 999 so title years like "(2024)" read as 0.
 fn parse_unread(title: &str) -> usize {
-    fn paren_number(s: &str) -> Option<usize> {
-        let inner = s.split(')').next()?;
-        if inner.is_empty() || !inner.chars().all(|c| c.is_ascii_digit()) {
-            return None;
-        }
-        inner.parse().ok()
+    let head: String = title.chars().take(40).collect();
+    let Some(open) = head.find('(') else { return 0 };
+    let rest = &head[open + 1..];
+    let Some(close) = rest.find(')') else { return 0 };
+    let inner = &rest[..close];
+    if inner.is_empty() || !inner.bytes().all(|b| b.is_ascii_digit()) {
+        return 0;
     }
-    let count = if let Some(rest) = title.strip_prefix('(') {
-        paren_number(rest)
-    } else if let Some(pos) = title.find("Inbox (") {
-        paren_number(&title[pos + "Inbox (".len()..])
-    } else {
-        None
-    };
-    count.filter(|&n| n <= 999).unwrap_or(0)
+    inner.parse().ok().filter(|&n| n <= 999).unwrap_or(0)
 }
 
 /// Saved main-window geometry (logical pixels), restored on startup so
@@ -257,16 +260,10 @@ fn popup_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f6
     (LogicalPosition::new(x, y), LogicalSize::new(w, h))
 }
 
-/// Switch to a service.
-///
-/// Sodium's RAM strategy is user-tunable: at most `max_alive` non-pinned
-/// webviews stay alive; when a switch would exceed that, the
-/// least-recently-used non-pinned webview is *destroyed* (not hidden), so
-/// its RAM is actually freed. Sessions persist because each service gets
-/// its own data_directory on disk (cookies / localStorage survive a destroy).
-///
-/// This command is `async` on purpose: creating a webview from a synchronous
-/// command can deadlock on Windows (documented Webview2 issue).
+/// Switch to a service. Over the "Hidup bareng" limit, the
+/// least-recently-used non-pinned webview is destroyed (sessions
+/// survive in its on-disk profile). Async on purpose: creating a
+/// webview from a sync command can deadlock on Windows.
 #[tauri::command]
 async fn switch_service(
     app: tauri::AppHandle,
@@ -274,6 +271,12 @@ async fn switch_service(
     id: String,
     url: String,
 ) -> Result<(), String> {
+    if !valid_id(&id) {
+        return Err("invalid service id".into());
+    }
+    if !valid_url(&url) {
+        return Err("invalid service url".into());
+    }
     let label = label_for(&id);
     let window = state
         .main_window
@@ -282,8 +285,15 @@ async fn switch_service(
         .clone()
         .ok_or("main window missing")?;
 
-    // Create the target if it is not alive yet.
     if app.get_webview(&label).is_none() {
+        // Make room first: creating first and evicting after would
+        // peak at limit+1 webviews (and their RAM) for a moment.
+        if !state.pinned.lock().unwrap().contains(&id) {
+            let max = *state.max_alive.lock().unwrap();
+            if max > 0 {
+                evict_down_to(&app, &state, max - 1);
+            }
+        }
         let data_dir = app
             .path()
             .app_data_dir()
@@ -337,12 +347,9 @@ async fn switch_service(
         let _ = wv.set_zoom(z);
     }
 
-    // Show only the target. Alive service webviews are stacked native
-    // controls with the most recently *created* one on top, so without
-    // this, switching to an older alive webview (a pinned service, or
-    // max_alive > 1) changes nothing on screen: the newer webview keeps
-    // covering it, and the covered service only appears once the covering
-    // one is deleted. Hide the rest, show the target.
+    // Native webviews stack with the newest on top, so show only
+    // the target and hide the rest — otherwise the covering webview
+    // keeps hiding the one switched to.
     *state.active.lock().unwrap() = Some(label.clone());
     for wv in app.webviews().values() {
         if wv.label() == label {
@@ -352,7 +359,6 @@ async fn switch_service(
         }
     }
 
-    // Mark target as most-recently-used.
     {
         let mut mru = state.alive_mru.lock().unwrap();
         mru.retain(|l| l != &label);
@@ -363,15 +369,21 @@ async fn switch_service(
     Ok(())
 }
 
-/// Destroy least-recently-used non-pinned webviews while more of them
-/// are alive than the user's "Hidup bareng" limit. Called after every
-/// switch and immediately when the limit itself changes, so lowering
-/// the limit takes effect at once instead of on the next switch.
+/// Destroy least-recently-used non-pinned webviews while more of
+/// them are alive than the user's "Hidup bareng" limit. Called after
+/// every switch and immediately when the limit itself changes, so
+/// lowering the limit takes effect at once instead of on the next
+/// switch.
 fn evict_over_limit(app: &tauri::AppHandle, state: &AppState) {
     let max_alive = *state.max_alive.lock().unwrap();
     if max_alive == 0 {
         return;
     }
+    evict_down_to(app, state, max_alive);
+}
+
+/// Destroy LRU non-pinned webviews until at most `target` remain.
+fn evict_down_to(app: &tauri::AppHandle, state: &AppState, target: usize) {
     loop {
         let victim: Option<String> = {
             let mru = state.alive_mru.lock().unwrap();
@@ -380,7 +392,7 @@ fn evict_over_limit(app: &tauri::AppHandle, state: &AppState) {
                 .iter()
                 .filter(|l| !pinned.contains(id_from_label(l)))
                 .collect();
-            if non_pinned.len() <= max_alive {
+            if non_pinned.len() <= target {
                 None
             } else {
                 // Last non-pinned in MRU order = least recently used.
@@ -406,11 +418,9 @@ fn evict_over_limit(app: &tauri::AppHandle, state: &AppState) {
     }
 }
 
-/// Hide or show all alive service webviews. Used while a UI panel (add
-/// service / right-click menu) is open: service webviews are native
-/// controls layered *above* the UI webview, so a panel rendered by the UI
-/// would be hidden behind e.g. WhatsApp and its buttons unclickable.
-/// Hiding is not destroying: sessions and state stay alive.
+/// Hide or show all alive service webviews while a UI panel is
+/// open: native webviews layer above the UI, so they would cover
+/// the panel. Hiding is not destroying; sessions stay alive.
 #[tauri::command]
 fn set_services_visible(app: tauri::AppHandle, state: State<'_, AppState>, visible: bool) {
     let active = state.active.lock().unwrap().clone();
@@ -446,6 +456,9 @@ async fn open_link_popup(
     state: State<'_, AppState>,
     url: String,
 ) -> Result<(), String> {
+    if !valid_url(&url) {
+        return Err("invalid url".into());
+    }
     let window = state
         .main_window
         .lock()
@@ -537,15 +550,42 @@ fn close_service(app: tauri::AppHandle, state: State<'_, AppState>, id: String) 
     if active.as_deref() == Some(label.as_str()) {
         *active = None;
     }
+    drop(active);
+    // Delete the profile folder too: it holds cookies and session
+    // tokens that must not outlive the service. WebView2 can keep
+    // the files locked briefly after the webview closes, so a
+    // failed first attempt retries in the background.
+    if valid_id(&id) {
+        if let Ok(dir) = app.path().app_data_dir() {
+            let profile = dir.join("profiles").join(&id);
+            if profile.exists() && std::fs::remove_dir_all(&profile).is_err() {
+                std::thread::spawn(move || {
+                    for _ in 0..5 {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        if !profile.exists() || std::fs::remove_dir_all(&profile).is_ok() {
+                            break;
+                        }
+                    }
+                });
+            }
+        }
+    }
 }
 
 #[tauri::command]
-fn set_pinned(state: State<'_, AppState>, id: String, pinned: bool) {
-    let mut set = state.pinned.lock().unwrap();
-    if pinned {
-        set.insert(id);
-    } else {
-        set.remove(&id);
+fn set_pinned(app: tauri::AppHandle, state: State<'_, AppState>, id: String, pinned: bool) {
+    {
+        let mut set = state.pinned.lock().unwrap();
+        if pinned {
+            set.insert(id);
+        } else {
+            set.remove(&id);
+        }
+    }
+    // Unpinning can put the alive count over the limit; evict now
+    // instead of waiting for the next switch.
+    if !pinned {
+        evict_over_limit(&app, &state);
     }
 }
 
@@ -636,11 +676,9 @@ pub fn run() {
             }
             Ok(())
         })
-        // WebView2 denies web permission requests by default when the host
-        // app does not answer them, which is why e.g. WhatsApp Web's
-        // "turn on notifications" could never be enabled. Answer the
-        // request: notifications are allowed (that is the point of a
-        // messaging aggregator); everything else keeps the default.
+        // Allow notification requests (unanswered, WebView2 denies
+        // them — WhatsApp's "turn on notifications" could never be
+        // enabled before this); everything else keeps the default.
         .on_permission_request(|_, kind| match kind {
             PermissionKind::Notifications => PermissionResponse::Allow,
             _ => PermissionResponse::Default,
@@ -658,7 +696,6 @@ pub fn run() {
             alive_services
         ])
         .on_window_event(|window, event| {
-            // Keep the UI and service webviews filling the main window.
             if window.label() != "main" {
                 return;
             }
@@ -706,4 +743,18 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Sodium");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_unread;
+
+    #[test]
+    fn unread_from_titles() {
+        assert_eq!(parse_unread("(3) WhatsApp"), 3);
+        assert_eq!(parse_unread("Inbox (12) - Gmail"), 12);
+        assert_eq!(parse_unread("Kotak Masuk (3) - a@b.com"), 3);
+        assert_eq!(parse_unread("(2024) Rekap"), 0);
+        assert_eq!(parse_unread("WhatsApp"), 0);
+    }
 }
