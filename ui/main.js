@@ -103,17 +103,19 @@ function hostOf(u) {
 // to hide the service webviews (hide, not destroy: sessions stay alive).
 // ---------------------------------------------------------------------------
 const pickerPanel = el("pickerPanel");
+const ctxPanel = el("ctxPanel");
 const iconPanel = el("iconPanel");
 const managePanel = el("managePanel");
-const allPanels = [pickerPanel, iconPanel, managePanel];
+const allPanels = [pickerPanel, ctxPanel, iconPanel, managePanel];
+let ctxService = null;
 let iconTarget = null;
 
 let lastFocus = null;
 async function openPanel(panel) {
   lastFocus = document.activeElement;
   for (const p of allPanels) p.hidden = true;
-  // Only the modal popups (picker / Kelola, class "picker") get the
-  // dimmed backdrop.
+  // Only the modal popups (picker / Kelola / right-click menu,
+  // class "picker") get the dimmed backdrop.
   el("scrim").hidden = !panel.classList.contains("picker");
   await invoke("set_services_visible", { visible: false });
   panel.hidden = false;
@@ -121,22 +123,9 @@ async function openPanel(panel) {
   if (f) f.focus();
 }
 
-// The service id whose page is currently dimmed by the right-click
-// menu (see openCtx), and whether that floating menu window is open.
-let dimmedId = null;
-let ctxOpen = false;
-async function liftDim() {
-  if (!dimmedId) return;
-  const d = dimmedId;
-  dimmedId = null;
-  try { await invoke("set_service_dim", { id: d, dim: false }); } catch { /* webview may be gone */ }
-}
-
 async function closePanels() {
   for (const p of allPanels) p.hidden = true;
   el("scrim").hidden = true;
-  if (ctxOpen) invoke("close_ctx_menu").catch(() => {});
-  await liftDim();
   await invoke("set_services_visible", { visible: true });
   if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
 }
@@ -226,75 +215,21 @@ function iconVisual(s, px) {
   return sp;
 }
 
-// The right-click menu is a small floating WINDOW (Rust label
-// "ctx-menu"), not a panel in this UI: a panel here sits behind the
-// native service webview (the v0.4.0 bug), while a top-level window
-// floats above it. The visible service's page is dimmed in place and
-// keeps its full size behind the menu; Rust closes the menu when it
-// loses focus and reports back here ("ctx-closed"), which lifts the
-// dim. Button choices arrive as "ctx-action".
-async function openCtx(s, ev) {
-  if (allPanels.some(p => !p.hidden)) await closePanels();
-  if (activeId) {
-    dimmedId = activeId;
-    try { await invoke("set_service_dim", { id: dimmedId, dim: true }); } catch { /* webview may be gone */ }
-  }
-  let cx = 84, cy = 56;
-  if (ev && typeof ev.clientX === "number") {
-    cx = ev.clientX + 6;
-    cy = ev.clientY - 6;
-  } else if (document.activeElement && document.activeElement.getBoundingClientRect) {
-    const r = document.activeElement.getBoundingClientRect();
-    cx = r.right + 6;
-    cy = r.top - 6;
-  }
-  const pos = await ctxScreenPos(cx, cy);
-  ctxOpen = true;
-  try {
-    await invoke("open_ctx_menu", {
-      id: s.id, name: s.name,
-      pinned: pinned.has(s.id), disabled: disabled.has(s.id),
-      x: pos.x, y: pos.y,
-    });
-  } catch {
-    ctxOpen = false;
-    await liftDim();
-  }
+// The right-click menu is a panel like the others (v0.4.4: back to
+// the classic mechanism after the dim variant in v0.4.0 and the
+// floating-window variant in v0.4.2 both misbehaved): opening it
+// hides the service webviews via openPanel, and it is shown as a
+// centred modal (class "picker") over the dimmed backdrop. Its items
+// are the slim set from v0.4.0: pin, disable, and the door to the
+// Kelola panel where everything else lives.
+async function openCtx(s) {
+  ctxService = s;
+  el("ctxTitle").textContent = s.name;
+  el("ctxPin").textContent = pinned.has(s.id) ? "Unpin" : "Pin (tetap hidup buat notif)";
+  el("ctxDisable").textContent = disabled.has(s.id) ? "Aktifkan lagi" : "Nonaktifkan (matikan total sementara)";
+  await openPanel(ctxPanel);
+  el("ctxPin").focus();
 }
-
-// Client (CSS pixel) coordinates -> screen coordinates for the
-// floating menu window, clamped to the current monitor.
-async function ctxScreenPos(cx, cy) {
-  try {
-    const w = window.__TAURI__.window.getCurrentWindow();
-    const scale = await w.scaleFactor();
-    const outer = (await w.outerPosition()).toLogical(scale);
-    let x = outer.x + cx;
-    let y = outer.y + cy;
-    const mon = await w.currentMonitor();
-    if (mon) {
-      const mp = mon.position.toLogical(scale);
-      const ms = mon.size.toLogical(scale);
-      x = Math.max(mp.x + 2, Math.min(x, mp.x + ms.width - 258));
-      y = Math.max(mp.y + 2, Math.min(y, mp.y + ms.height - 228));
-    }
-    return { x, y };
-  } catch { return { x: 120, y: 120 }; }
-}
-
-// Choices from the floating menu window.
-window.__TAURI__.event.listen("ctx-action", async (e) => {
-  const [id, action] = e.payload || [];
-  const s = services.find(x => x.id === id);
-  if (!s) return;
-  if (action === "pin") togglePin(s);
-  else if (action === "disable") await setServiceDisabled(s, !disabled.has(s.id));
-  else if (action === "manage") await openManage();
-});
-window.__TAURI__.event.listen("ctx-closed", async () => {
-  ctxOpen = false;
-  await liftDim();
-});
 
 function render() {
   document.body.classList.toggle("showNames", showNames);
@@ -338,19 +273,19 @@ function render() {
       if (disabled.has(s.id)) {
         // Disabled services cannot be opened; a click opens the menu
         // where "Aktifkan lagi" lives, so the way back is one click away.
-        await openCtx(s, e);
+        await openCtx(s);
         return;
       }
       switchTo(s);
     });
     b.addEventListener("contextmenu", async (e) => {
       e.preventDefault();
-      await openCtx(s, e);
+      await openCtx(s);
     });
     b.addEventListener("keydown", async (e) => {
       if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
         e.preventDefault();
-        await openCtx(s, e);
+        await openCtx(s);
       }
     });
     nav.appendChild(b);
@@ -466,6 +401,22 @@ async function openPicker() {
   await openPanel(pickerPanel);
   searchInput.focus();
 }
+
+// Right-click menu actions: pin, disable, and the door to the
+// Kelola panel.
+el("ctxPin").addEventListener("click", async () => {
+  if (!ctxService) return;
+  togglePin(ctxService);
+  await closePanels();
+});
+el("ctxDisable").addEventListener("click", async () => {
+  if (!ctxService) return;
+  await setServiceDisabled(ctxService, !disabled.has(ctxService.id));
+  await closePanels();
+});
+el("ctxManage").addEventListener("click", async () => {
+  await openManage();
+});
 
 el("addBtn").addEventListener("click", openPicker);
 searchInput.addEventListener("input", renderPicker);
