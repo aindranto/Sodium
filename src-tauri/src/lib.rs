@@ -138,6 +138,90 @@ fn make_download_handler(
     }
 }
 
+/// Ctrl+1..9 as global shortcuts. They are registered only while the
+/// Sodium window is focused (and released on blur, so other apps keep
+/// their Ctrl+number keys): keydown events inside a service webview
+/// never reach Sodium's own UI, so without this the number shortcuts
+/// would be dead exactly while the user is chatting.
+fn digit_shortcuts() -> Vec<tauri_plugin_global_shortcut::Shortcut> {
+    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+    [
+        Code::Digit1,
+        Code::Digit2,
+        Code::Digit3,
+        Code::Digit4,
+        Code::Digit5,
+        Code::Digit6,
+        Code::Digit7,
+        Code::Digit8,
+        Code::Digit9,
+    ]
+    .iter()
+    .map(|c| Shortcut::new(Some(Modifiers::CONTROL), *c))
+    .collect()
+}
+
+fn shortcut_index(code: tauri_plugin_global_shortcut::Code) -> Option<usize> {
+    use tauri_plugin_global_shortcut::Code;
+    match code {
+        Code::Digit1 => Some(0),
+        Code::Digit2 => Some(1),
+        Code::Digit3 => Some(2),
+        Code::Digit4 => Some(3),
+        Code::Digit5 => Some(4),
+        Code::Digit6 => Some(5),
+        Code::Digit7 => Some(6),
+        Code::Digit8 => Some(7),
+        Code::Digit9 => Some(8),
+        _ => None,
+    }
+}
+
+/// Saved main-window geometry (logical pixels), restored on startup so
+/// Sodium reopens where and how big the user left it.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct WindowStateFile {
+    width: f64,
+    height: f64,
+    x: Option<f64>,
+    y: Option<f64>,
+}
+
+fn load_window_state(app: &tauri::AppHandle) -> Option<WindowStateFile> {
+    let path = app.path().app_data_dir().ok()?.join("window-state.json");
+    let text = std::fs::read_to_string(path).ok()?;
+    let saved: WindowStateFile = serde_json::from_str(&text).ok()?;
+    if saved.width < 900.0 || saved.height < 600.0 || saved.width > 10000.0 || saved.height > 10000.0
+    {
+        return None;
+    }
+    if let (Some(x), Some(y)) = (saved.x, saved.y) {
+        if x < -10000.0 || x > 10000.0 || y < -10000.0 || y > 10000.0 {
+            return None;
+        }
+    }
+    Some(saved)
+}
+
+fn save_window_state(app: &tauri::AppHandle, window: &tauri::Window) {
+    let (Ok(size), Ok(pos)) = (window.inner_size(), window.outer_position()) else {
+        return;
+    };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let saved = WindowStateFile {
+        width: size.width as f64 / scale,
+        height: size.height as f64 / scale,
+        x: Some(pos.x as f64 / scale),
+        y: Some(pos.y as f64 / scale),
+    };
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(text) = serde_json::to_string(&saved) {
+            let _ = std::fs::write(dir.join("window-state.json"), text);
+        }
+    }
+}
+
 /// Bounds for the link popup: floating over the content area with a
 /// margin on every side, below the top bar and the UI's link bar.
 fn popup_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f64>) {
@@ -238,36 +322,44 @@ async fn switch_service(
         mru.insert(0, label.clone());
     }
 
-    // Evict LRU non-pinned webviews while over the user's limit.
+    evict_over_limit(&app, &state);
+    Ok(())
+}
+
+/// Destroy least-recently-used non-pinned webviews while more of them
+/// are alive than the user's "Hidup bareng" limit. Called after every
+/// switch and immediately when the limit itself changes, so lowering
+/// the limit takes effect at once instead of on the next switch.
+fn evict_over_limit(app: &tauri::AppHandle, state: &AppState) {
     let max_alive = *state.max_alive.lock().unwrap();
-    if max_alive > 0 {
-        loop {
-            let victim: Option<String> = {
-                let mru = state.alive_mru.lock().unwrap();
-                let pinned = state.pinned.lock().unwrap();
-                let non_pinned: Vec<&String> = mru
-                    .iter()
-                    .filter(|l| !pinned.contains(id_from_label(l)))
-                    .collect();
-                if non_pinned.len() <= max_alive {
-                    None
-                } else {
-                    // Last non-pinned in MRU order = least recently used.
-                    non_pinned.last().map(|s| (*s).clone())
-                }
-            };
-            match victim {
-                Some(v) => {
-                    if let Some(wv) = app.get_webview(&v) {
-                        let _ = wv.close();
-                    }
-                    state.alive_mru.lock().unwrap().retain(|l| l != &v);
-                }
-                None => break,
+    if max_alive == 0 {
+        return;
+    }
+    loop {
+        let victim: Option<String> = {
+            let mru = state.alive_mru.lock().unwrap();
+            let pinned = state.pinned.lock().unwrap();
+            let non_pinned: Vec<&String> = mru
+                .iter()
+                .filter(|l| !pinned.contains(id_from_label(l)))
+                .collect();
+            if non_pinned.len() <= max_alive {
+                None
+            } else {
+                // Last non-pinned in MRU order = least recently used.
+                non_pinned.last().map(|s| (*s).clone())
             }
+        };
+        match victim {
+            Some(v) => {
+                if let Some(wv) = app.get_webview(&v) {
+                    let _ = wv.close();
+                }
+                state.alive_mru.lock().unwrap().retain(|l| l != &v);
+            }
+            None => break,
         }
     }
-    Ok(())
 }
 
 /// Hide or show all alive service webviews. Used while a UI panel (add
@@ -414,8 +506,9 @@ fn set_pinned(state: State<'_, AppState>, id: String, pinned: bool) {
 
 /// Set how many non-pinned services may be alive at once. 0 = unlimited.
 #[tauri::command]
-fn set_max_alive(state: State<'_, AppState>, max: usize) {
+fn set_max_alive(app: tauri::AppHandle, state: State<'_, AppState>, max: usize) {
     *state.max_alive.lock().unwrap() = max;
+    evict_over_limit(&app, &state);
 }
 
 /// Set the page zoom for one service (1.0 = 100%). Stored per service so
@@ -448,6 +541,18 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    use tauri_plugin_global_shortcut::ShortcutState;
+                    if event.state() == ShortcutState::Pressed {
+                        if let Some(idx) = shortcut_index(shortcut.key()) {
+                            let _ = app.emit_to(UI_LABEL, "shortcut-switch", idx);
+                        }
+                    }
+                })
+                .build(),
+        )
         .manage(AppState {
             max_alive: Mutex::new(1),
             zoom: Mutex::new(HashMap::new()),
@@ -458,11 +563,24 @@ pub fn run() {
             // (tauri.conf.json declares no windows) because only `Window`
             // supports `add_child`; a config-created window is a
             // WebviewWindow, which cannot host service webviews.
-            let window = tauri::window::WindowBuilder::new(app, "main")
+            let mut win_builder = tauri::window::WindowBuilder::new(app, "main")
                 .title("Sodium")
                 .inner_size(1280.0, 800.0)
-                .min_inner_size(900.0, 600.0)
-                .build()?;
+                .min_inner_size(900.0, 600.0);
+            if let Some(saved) = load_window_state(app.handle()) {
+                win_builder = win_builder.inner_size(saved.width, saved.height);
+                if let (Some(x), Some(y)) = (saved.x, saved.y) {
+                    win_builder = win_builder.position(x, y);
+                }
+            }
+            let window = win_builder.build()?;
+            {
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                let _ = app
+                    .handle()
+                    .global_shortcut()
+                    .register_multiple(digit_shortcuts());
+            }
             let size = window.inner_size()?;
             let ui_builder = WebviewBuilder::new(UI_LABEL, WebviewUrl::App("index.html".into()));
             window.add_child(ui_builder, LogicalPosition::new(0.0, 0.0), size)?;
@@ -498,6 +616,29 @@ pub fn run() {
             // Keep the UI and service webviews filling the main window.
             if window.label() != "main" {
                 return;
+            }
+            {
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                match event {
+                    // Ctrl+1..9 belong to Sodium only while its window is
+                    // focused; release them when it blurs.
+                    WindowEvent::Focused(true) => {
+                        let _ = window
+                            .app_handle()
+                            .global_shortcut()
+                            .register_multiple(digit_shortcuts());
+                    }
+                    WindowEvent::Focused(false) => {
+                        let _ = window
+                            .app_handle()
+                            .global_shortcut()
+                            .unregister_multiple(digit_shortcuts());
+                    }
+                    WindowEvent::CloseRequested { .. } => {
+                        save_window_state(&window.app_handle(), window);
+                    }
+                    _ => {}
+                }
             }
             if let WindowEvent::Resized(_) = event {
                 let app = window.app_handle();
