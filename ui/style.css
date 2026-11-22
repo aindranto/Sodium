@@ -32,6 +32,11 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 .linkBtns button:hover{background:#2f3441}
 #toast{flex:1;margin:0 16px;max-width:520px;background:#262a33;border:1px solid #333947;border-radius:99px;padding:4px 14px;font-size:12px;color:#e8eaf0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
 #toast[hidden]{display:none}
+#notifToast{flex:1;margin:0 16px;max-width:520px;background:#262a33;border:1px solid #f5c518;border-radius:99px;padding:4px 8px 4px 14px;font-size:12px;color:#e8eaf0;display:flex;align-items:center;gap:8px;cursor:pointer}
+#notifToast[hidden]{display:none}
+#notifText{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+#notifClose{background:none;border:0;color:#9aa3b5;cursor:pointer;font-size:12px;padding:2px 6px}
+#notifClose:hover{color:#e8eaf0}
 #welcome{margin-left:76px;margin-top:44px;padding:48px;max-width:640px}
 #welcome h1{font-size:40px;margin:0 0 8px}
 .muted{color:#9aa3b5;line-height:1.55}

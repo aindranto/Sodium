@@ -1,6 +1,6 @@
 [package]
 name = "sodium"
-version = "0.3.2"
+version = "0.3.3"
 description = "Sodium - lightweight social aggregator inspired by Ferdium"
 authors = ["Agung Indra Oktoverianto"]
 edition = "2021"
@@ -19,3 +19,12 @@ serde_json = "1"
 rfd = "0.15"
 tauri-plugin-single-instance = "2"
 tauri-plugin-global-shortcut = "2"
+
+[target.'cfg(windows)'.dependencies]
+# Direct WebView2 access for the notification bridge (v0.3.3): wry and
+# tauri do not expose the NotificationReceived event, so Sodium
+# subscribes itself. Versions match what tauri 2.12 resolves to, so
+# the types behind PlatformWebview::controller() are the same ones
+# named here.
+webview2-com = "0.39"
+windows = "0.62"

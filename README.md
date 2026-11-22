@@ -34,8 +34,9 @@ Analisis lengkap mengenai kode sumber Ferdium dan pertimbangan desainnya tersedi
 - **Duplikat (akun beda)** melalui menu klik kanan pada ikon layanan: menyalin URL dan ikon dengan profil yang masih kosong, untuk masuk dengan akun lain pada layanan yang sama.
 - **Ganti nama** layanan melalui menu klik kanan: nama bebas tanpa memengaruhi sesi masuk, pin, atau zoom (semua terikat pada id layanan, bukan nama). Layanan custom URL tanpa logo katalog mengambil favicon situsnya secara otomatis.
 - Notifikasi situs dapat diaktifkan, karena Sodium menjawab permintaan izin notifikasi dengan benar.
+- **Klik notifikasi membuka percakapan**: Sodium mengambil alih notifikasi layanan (banner kuning di bar atas + kedipan tombol taskbar); mengklik banner membuka layanannya dan meneruskan klik ke halaman, sehingga misalnya WhatsApp langsung membuka chat yang dimaksud — bukan lagi toast yang kliknya hilang saat webview layanan sedang mati.
 
-Belum tersedia: system tray, jembatan notifikasi native, dan pembaruan otomatis.
+Belum tersedia: system tray dan pembaruan otomatis.
 
 ## Pengembangan
 
