@@ -1,6 +1,6 @@
 [package]
 name = "sodium"
-version = "0.2.4"
+version = "0.2.5"
 description = "Sodium - lightweight social aggregator inspired by Ferdium"
 authors = ["Agung Indra Oktoverianto"]
 edition = "2021"
@@ -16,3 +16,4 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["unstable"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rfd = "0.15"
