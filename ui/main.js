@@ -104,6 +104,8 @@ let lastFocus = null;
 async function openPanel(panel) {
   lastFocus = document.activeElement;
   for (const p of allPanels) p.hidden = true;
+  // Only the picker is a modal dialog: it gets the dimmed backdrop.
+  el("scrim").hidden = panel.id !== "pickerPanel";
   await invoke("set_services_visible", { visible: false });
   panel.hidden = false;
   const f = panel.querySelector("input:not([type='file']), button:not([disabled])");
@@ -112,6 +114,7 @@ async function openPanel(panel) {
 
 async function closePanels() {
   for (const p of allPanels) p.hidden = true;
+  el("scrim").hidden = true;
   await invoke("set_services_visible", { visible: true });
   if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
 }
@@ -549,6 +552,13 @@ window.__TAURI__.event.listen("download-finished", (e) => {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
 });
+
+// Version label in the top bar, read from the app itself so it can
+// never go stale or disagree with the installed build. If the read
+// fails the label stays empty: no version shown beats a wrong one.
+window.__TAURI__.app.getVersion()
+  .then(v => { el("appVersion").textContent = "Sodium v" + v; })
+  .catch(() => {});
 
 // Unread badge counts from Rust (page-title watcher in each service
 // webview). Re-render the sidebar so the number appears/clears.
