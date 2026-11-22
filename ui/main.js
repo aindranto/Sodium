@@ -55,6 +55,10 @@ const store = {
 };
 
 let services = store.load();
+// Unread counts per service id, reported by Rust from page titles
+// ("(3) WhatsApp"). Only alive webviews report; Rust sends 0 when a
+// webview is closed or evicted, so a badge never shows a stale count.
+const unread = new Map();
 let pinned = store.pinned();
 let disabled = store.disabled();
 let activeId = null;
@@ -202,7 +206,14 @@ function render() {
       if (s.color) b.style.background = s.color;
     }
     if (pinned.has(s.id)) {
-      const p = document.createElement("span"); p.className = "pin"; p.textContent = "📌"; b.appendChild(p);
+      const p = document.createElement("span"); p.className = "pin"; b.appendChild(p);
+    }
+    const n = unread.get(s.id);
+    if (n && !disabled.has(s.id)) {
+      const bd = document.createElement("span");
+      bd.className = "badge";
+      bd.textContent = n > 99 ? "99+" : String(n);
+      b.appendChild(bd);
     }
     b.addEventListener("click", async () => {
       if (disabled.has(s.id)) {
@@ -537,6 +548,14 @@ window.__TAURI__.event.listen("download-finished", (e) => {
   toast.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
+});
+
+// Unread badge counts from Rust (page-title watcher in each service
+// webview). Re-render the sidebar so the number appears/clears.
+window.__TAURI__.event.listen("unread-changed", (e) => {
+  const [id, count] = e.payload;
+  if (count > 0) unread.set(id, count); else unread.delete(id);
+  render();
 });
 
 // Ctrl+1..9 also arrives from Rust as a global shortcut while the
