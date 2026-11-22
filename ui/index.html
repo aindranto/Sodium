@@ -9,20 +9,20 @@
 <body>
   <aside id="sidebar">
     <nav id="services"></nav>
-    <button id="addBtn" title="Tambah layanan">+</button>
+    <button id="addBtn" title="Tambah layanan" aria-label="Tambah layanan">+</button>
   </aside>
   <header id="topbar">
     <div id="activeName">Sodium</div>
     <div id="toast" hidden></div>
     <div class="topTools">
       <div class="zoomCtl" title="Zoom tampilan layanan">
-        <button id="zoomOut" title="Zoom out">−</button>
-        <button id="zoomLabel" title="Reset zoom ke 100%">100%</button>
-        <button id="zoomIn" title="Zoom in">+</button>
+        <button id="zoomOut" title="Zoom out" aria-label="Perkecil zoom">−</button>
+        <button id="zoomLabel" title="Reset zoom ke 100%" aria-label="Reset zoom ke 100%">100%</button>
+        <button id="zoomIn" title="Zoom in" aria-label="Perbesar zoom">+</button>
       </div>
       <label class="topAlive" title="Berapa layanan non-pin yang boleh hidup bersamaan. 1 = paling ringan. ∞ = semua hidup (kayak Ferdium, RAM naik per layanan).">
         Hidup bareng
-        <select id="maxAlive">
+        <select id="maxAlive" aria-label="Jumlah layanan yang boleh hidup bersamaan">
           <option value="1">1</option>
           <option value="2">2</option>
           <option value="3">3</option>
@@ -37,12 +37,12 @@
     <div class="linkBtns">
       <button id="linkCopy">Salin link</button>
       <button id="linkExternal">Buka di browser</button>
-      <button id="linkClose" title="Tutup popup">✕</button>
+      <button id="linkClose" title="Tutup popup" aria-label="Tutup popup">✕</button>
     </div>
   </div>
   <main id="welcome">
     <h1>Sodium</h1>
-    <p>Semua layanan sosial &amp; chat lo, dalam satu tempat — dengan cara yang ringan.</p>
+    <p>Semua layanan sosial &amp; chat lo, dalam satu tempat, dengan cara yang ringan.</p>
     <p class="muted">Pilih layanan di kiri untuk mulai. Layanan lain akan dimatikan total
     (bukan disembunyikan) supaya RAM tetap rata, kecuali yang lo pin.</p>
     <p class="muted" id="ramNote"></p>
@@ -51,15 +51,15 @@
   <div id="pickerPanel" class="picker" hidden>
     <div class="pickerHead">
       <h3>Pilih layanan</h3>
-      <input id="pickerSearch" placeholder="Cari layanan..."/>
+      <input id="pickerSearch" placeholder="Cari layanan..." aria-label="Cari layanan"/>
     </div>
     <div id="pickerGrid" class="pickerGrid"></div>
     <div class="pickerCustom">
       <h4>Atau tambah custom URL</h4>
       <div class="customRow">
-        <input id="cName" placeholder="Nama, mis. WhatsApp 2"/>
-        <input id="cUrl" placeholder="https://..."/>
-        <input id="cIcon" placeholder="Ikon" maxlength="8" class="iconInput"/>
+        <input id="cName" placeholder="Nama, mis. WhatsApp 2" aria-label="Nama layanan"/>
+        <input id="cUrl" placeholder="https://..." aria-label="Alamat URL layanan"/>
+        <input id="cIcon" placeholder="Ikon" maxlength="8" class="iconInput" aria-label="Ikon layanan, emoji atau 1 sampai 2 huruf"/>
         <button id="cUploadBtn" class="btnGhost" title="Upload gambar ikon (.jpg / .jpeg / .png / .ico)">Upload ikon</button>
         <img id="cIconPreview" class="iconPreview" title="Klik untuk membatalkan gambar" hidden/>
         <input id="cIconFile" type="file" accept=".jpg,.jpeg,.png,.ico,image/jpeg,image/png,image/x-icon" hidden/>
