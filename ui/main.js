@@ -3,37 +3,39 @@
 // see src-tauri/src/lib.rs -> switch_service()
 
 // Catalog of popular services with their official web apps, shown in the
-// picker (first run, and whenever "+" is clicked). Icons are emoji on a
-// brand-coloured tile: no image files to bundle, stays feather-light.
+// picker (first run, and whenever "+" is clicked). "slug" points into
+// ICON_PATHS (icons.js, Simple Icons paths): the service renders as the
+// real brand logo, drawn in the service's iconColor on its colour tile.
+// Tokopedia has no Simple Icons entry, so it keeps its emoji icon.
 const CATALOG = [
-  { id: "whatsapp",  name: "WhatsApp",        url: "https://web.whatsapp.com/",        icon: "💬", color: "#1faa55" },
-  { id: "telegram",  name: "Telegram",        url: "https://web.telegram.org/k/",      icon: "✈️", color: "#229ed9" },
-  { id: "instagram", name: "Instagram",       url: "https://www.instagram.com/",       icon: "📸", color: "#c13584" },
-  { id: "messenger", name: "Messenger",       url: "https://www.messenger.com/",       icon: "M", color: "#0084ff" },
-  { id: "discord",   name: "Discord",         url: "https://discord.com/channels/@me", icon: "🎮", color: "#5865f2" },
-  { id: "gmail",     name: "Gmail",           url: "https://mail.google.com/",         icon: "✉️", color: "#d93025" },
-  { id: "facebook",  name: "Facebook",        url: "https://www.facebook.com/",        icon: "👍", color: "#1877f2" },
-  { id: "tiktok",    name: "TikTok",          url: "https://www.tiktok.com/",          icon: "🎵", color: "#161823" },
-  { id: "youtube",   name: "YouTube",         url: "https://www.youtube.com/",         icon: "▶️", color: "#ff0000" },
-  { id: "twitter",   name: "X (Twitter)",     url: "https://x.com/",                   icon: "X", color: "#14171a" },
-  { id: "slack",     name: "Slack",           url: "https://app.slack.com/client",     icon: "#️⃣", color: "#611f69" },
-  { id: "teams",     name: "Microsoft Teams", url: "https://teams.microsoft.com/",     icon: "👥", color: "#4b53bc" },
-  { id: "gcal",      name: "Google Calendar", url: "https://calendar.google.com/",     icon: "📅", color: "#4285f4" },
-  { id: "spotify",   name: "Spotify",         url: "https://open.spotify.com/",        icon: "🎧", color: "#1db954" },
-  { id: "github",    name: "GitHub",          url: "https://github.com/",              icon: "🐙", color: "#24292e" },
-  { id: "linkedin",  name: "LinkedIn",        url: "https://www.linkedin.com/",        icon: "💼", color: "#0a66c2" },
-  { id: "reddit",    name: "Reddit",          url: "https://www.reddit.com/",          icon: "🤖", color: "#ff4500" },
-  { id: "pinterest", name: "Pinterest",       url: "https://www.pinterest.com/",       icon: "📌", color: "#e60023" },
-  { id: "netflix",   name: "Netflix",         url: "https://www.netflix.com/",         icon: "🎬", color: "#b20710" },
+  { id: "whatsapp",  name: "WhatsApp",        url: "https://web.whatsapp.com/",        icon: "💬", color: "#1faa55" , slug: "whatsapp" },
+  { id: "telegram",  name: "Telegram",        url: "https://web.telegram.org/k/",      icon: "✈️", color: "#229ed9" , slug: "telegram" },
+  { id: "instagram", name: "Instagram",       url: "https://www.instagram.com/",       icon: "📸", color: "#c13584" , slug: "instagram" },
+  { id: "messenger", name: "Messenger",       url: "https://www.messenger.com/",       icon: "M", color: "#0084ff" , slug: "messenger" },
+  { id: "discord",   name: "Discord",         url: "https://discord.com/channels/@me", icon: "🎮", color: "#5865f2" , slug: "discord" },
+  { id: "gmail",     name: "Gmail",           url: "https://mail.google.com/",         icon: "✉️", color: "#d93025" , slug: "gmail" },
+  { id: "facebook",  name: "Facebook",        url: "https://www.facebook.com/",        icon: "👍", color: "#1877f2" , slug: "facebook" },
+  { id: "tiktok",    name: "TikTok",          url: "https://www.tiktok.com/",          icon: "🎵", color: "#161823" , slug: "tiktok" },
+  { id: "youtube",   name: "YouTube",         url: "https://www.youtube.com/",         icon: "▶️", color: "#ff0000" , slug: "youtube" },
+  { id: "twitter",   name: "X (Twitter)",     url: "https://x.com/",                   icon: "X", color: "#14171a" , slug: "x" },
+  { id: "slack",     name: "Slack",           url: "https://app.slack.com/client",     icon: "#️⃣", color: "#611f69" , slug: "slack" },
+  { id: "teams",     name: "Microsoft Teams", url: "https://teams.microsoft.com/",     icon: "👥", color: "#4b53bc" , slug: "microsoftteams" },
+  { id: "gcal",      name: "Google Calendar", url: "https://calendar.google.com/",     icon: "📅", color: "#4285f4" , slug: "googlecalendar" },
+  { id: "spotify",   name: "Spotify",         url: "https://open.spotify.com/",        icon: "🎧", color: "#1db954" , slug: "spotify" },
+  { id: "github",    name: "GitHub",          url: "https://github.com/",              icon: "🐙", color: "#24292e" , slug: "github" },
+  { id: "linkedin",  name: "LinkedIn",        url: "https://www.linkedin.com/",        icon: "💼", color: "#0a66c2" , slug: "linkedin" },
+  { id: "reddit",    name: "Reddit",          url: "https://www.reddit.com/",          icon: "🤖", color: "#ff4500" , slug: "reddit" },
+  { id: "pinterest", name: "Pinterest",       url: "https://www.pinterest.com/",       icon: "📌", color: "#e60023" , slug: "pinterest" },
+  { id: "netflix",   name: "Netflix",         url: "https://www.netflix.com/",         icon: "🎬", color: "#b20710" , slug: "netflix" },
   { id: "tokopedia", name: "Tokopedia",       url: "https://www.tokopedia.com/",       icon: "🦉", color: "#42b549" },
-  { id: "shopee",    name: "Shopee",          url: "https://shopee.co.id/",            icon: "🛍️", color: "#ee4d2d" },
+  { id: "shopee",    name: "Shopee",          url: "https://shopee.co.id/",            icon: "🛍️", color: "#ee4d2d" , slug: "shopee" },
 ];
 
 const ICON_PALETTE = ["💬","✈️","📸","🎮","✉️","🎵","📺","👍","🎧","🐙","💼","🤖","📌","🎬","🛍️","🛒","❤️","🔥","✅","📅","👥","🌐","💡","📰"];
 
 const DEFAULT_SERVICES = [
   // Agung's daily driver, pre-added. Everything else comes from the picker.
-  { id: "whatsapp", name: "WhatsApp", url: "https://web.whatsapp.com/", icon: "💬", color: "#1faa55" },
+  { id: "whatsapp", name: "WhatsApp", url: "https://web.whatsapp.com/", icon: "💬", color: "#1faa55", brand: "whatsapp", iconColor: "#ffffff" },
 ];
 
 const store = {
@@ -73,7 +75,8 @@ function hostOf(u) {
 
 // One-time migration: services added before v0.2.0 have letter icons and no
 // colour. If their URL matches a catalog entry, adopt its emoji + colour
-// (only when the icon is still the auto-generated 1-2 letters).
+// (only when the icon is still the auto-generated 1-2 letters), and adopt
+// the real brand logo when the icon is still that catalog default.
 (function migrate() {
   let changed = false;
   for (const s of services) {
@@ -81,6 +84,10 @@ function hostOf(u) {
     if (!cat) continue;
     if (!s.color) { s.color = cat.color; changed = true; }
     if (!s.icon || /^[A-Za-z]{1,2}$/.test(s.icon)) { s.icon = cat.icon; changed = true; }
+    // Brand logo adoption: only when the icon is still the untouched
+    // catalog default and no image was uploaded. A manually chosen icon
+    // or an uploaded image is never overridden.
+    if (cat.slug && !s.brand && !s.img && s.icon === cat.icon) { s.brand = cat.slug; changed = true; }
   }
   if (changed) store.save(services);
 })();
@@ -124,8 +131,14 @@ async function closePanels() {
 document.addEventListener("click", (e) => {
   const open = allPanels.find(p => !p.hidden);
   if (!open) return;
-  if (open.contains(e.target)) return;
-  if (e.target.closest("#sidebar")) return;
+  // composedPath() is the click's original route through the DOM,
+  // recorded when the click happened. contains(e.target) is not
+  // enough: a handler may re-render part of a panel mid-click (the
+  // picker grid did), detaching e.target and making an inside click
+  // look like an outside one. That was the v0.3.0 picker bug.
+  const path = e.composedPath ? e.composedPath() : [e.target];
+  if (path.includes(open)) return;
+  if (path.some(n => n && n.id === "sidebar")) return;
   closePanels();
 });
 
@@ -180,6 +193,24 @@ function processIconFile(file) {
 // event, by clicking a disabled service, and from the keyboard
 // (ContextMenu key / Shift+F10 on the focused sidebar button), so the
 // menu is reachable without a mouse too.
+// The visual for a service without an uploaded image: the real brand
+// logo (SVG path from icons.js) drawn in iconColor, or the text icon
+// (emoji / letters) in iconColor. Uploaded images always win: render()
+// handles them before calling this.
+function iconVisual(s, px) {
+  const col = s.iconColor || "#ffffff";
+  const sp = document.createElement("span");
+  if (s.brand && ICON_PATHS[s.brand]) {
+    sp.className = "svgIcon";
+    sp.innerHTML = '<svg viewBox="0 0 24 24" width="' + px + '" height="' + px + '" fill="' + col + '" aria-hidden="true"><path d="' + ICON_PATHS[s.brand] + '"/></svg>';
+  } else {
+    sp.className = "txtIcon";
+    sp.style.color = col;
+    sp.textContent = s.icon || s.name.slice(0, 2);
+  }
+  return sp;
+}
+
 async function openCtx(s) {
   ctxService = s;
   el("ctxTitle").textContent = s.name;
@@ -205,7 +236,7 @@ function render() {
       im.className = "svcImg"; im.src = s.img; im.alt = "";
       b.appendChild(im);
     } else {
-      b.textContent = s.icon || s.name.slice(0, 2);
+      b.appendChild(iconVisual(s, 26));
       if (s.color) b.style.background = s.color;
     }
     if (pinned.has(s.id)) {
@@ -271,16 +302,35 @@ async function switchTo(s) {
 // ---------------------------------------------------------------------------
 const grid = el("pickerGrid");
 const searchInput = el("pickerSearch");
-const addSelectedBtn = el("addSelected");
-let selected = new Set();
 
-function isAdded(cat) {
-  return services.some(s => s.id === cat.id || hostOf(s.url) === hostOf(cat.url));
+// How many instances of a catalog service already exist (the first
+// add, plus numbered copies for other accounts).
+function instanceCount(cat) {
+  return services.filter(s =>
+    (cat.slug && s.brand === cat.slug) || hostOf(s.url) === hostOf(cat.url)
+  ).length;
 }
 
-function updateAddBtn() {
-  addSelectedBtn.textContent = `Tambah (${selected.size})`;
-  addSelectedBtn.disabled = selected.size === 0;
+// Add one instance of a catalog service. The first keeps the catalog
+// id and name; further instances (another account) get the smallest
+// free number: "WhatsApp 2", "WhatsApp 3", ... Each instance is its
+// own service with its own empty profile folder, so logins never mix.
+function addCatalogService(cat) {
+  let id = cat.id;
+  let name = cat.name;
+  if (instanceCount(cat) > 0) {
+    let n = 2;
+    while (services.some(s => s.name === cat.name + " " + n)) n++;
+    id = cat.id + "-" + n;
+    name = cat.name + " " + n;
+  }
+  const svc = { id, name, url: cat.url, icon: cat.icon, color: cat.color, iconColor: "#ffffff" };
+  if (cat.slug) svc.brand = cat.slug;
+  services.push(svc);
+  store.save(services);
+  render();
+  markOnboarded();
+  return instanceCount(cat);
 }
 
 function renderPicker() {
@@ -288,44 +338,45 @@ function renderPicker() {
   grid.innerHTML = "";
   for (const cat of CATALOG) {
     if (q && !cat.name.toLowerCase().includes(q)) continue;
-    const added = isAdded(cat);
     const t = document.createElement("button");
     t.type = "button";
-    t.className = "tile" + (added ? " added" : "") + (selected.has(cat.id) ? " selected" : "");
+    t.className = "tile";
+    t.title = "Klik untuk menambah " + cat.name;
     const ic = document.createElement("span");
-    ic.className = "tileIcon"; ic.style.background = cat.color; ic.textContent = cat.icon;
+    ic.className = "tileIcon"; ic.style.background = cat.color;
+    ic.appendChild(iconVisual({ brand: cat.slug, icon: cat.icon, name: cat.name, iconColor: "#ffffff" }, 28));
     const nm = document.createElement("span");
     nm.className = "tileName"; nm.textContent = cat.name;
     t.append(ic, nm);
-    if (added) {
-      const badge = document.createElement("span");
-      badge.className = "tileBadge"; badge.textContent = "Sudah ada";
-      t.appendChild(badge);
-      t.disabled = true;
-    } else {
-      t.addEventListener("click", () => {
-        if (selected.has(cat.id)) selected.delete(cat.id); else selected.add(cat.id);
-        renderPicker();
-      });
-    }
+    const badge = document.createElement("span");
+    badge.className = "tileBadge";
+    const n0 = instanceCount(cat);
+    badge.textContent = n0 ? "\u00d7" + n0 : "";
+    badge.hidden = !n0;
+    t.appendChild(badge);
+    // Click = add right away; there is no select-then-confirm step.
+    // Only this tile's badge is updated, the grid is not re-rendered,
+    // so the panel stays open and the click target stays attached.
+    t.addEventListener("click", () => {
+      const n = addCatalogService(cat);
+      badge.textContent = "\u00d7" + n;
+      badge.hidden = false;
+    });
     grid.appendChild(t);
   }
   if (!grid.children.length) {
     const d = document.createElement("div");
     d.className = "pickerEmpty";
-    d.textContent = q
-      ? "Tidak ada layanan yang cocok dengan \"" + searchInput.value.trim() + "\". Coba kata lain, atau tambah lewat form custom URL di bawah."
-      : "Semua layanan di katalog sudah ditambahkan.";
+    d.textContent = "Tidak ada layanan yang cocok dengan \"" + searchInput.value.trim() + "\". Coba kata lain, atau tambah lewat form custom URL di bawah.";
     grid.appendChild(d);
   }
-  updateAddBtn();
 }
 
 function markOnboarded() { localStorage.setItem("sodium.onboarded", "1"); }
 
 async function openPicker() {
-  selected.clear();
   searchInput.value = "";
+  el("pickerSkip").textContent = localStorage.getItem("sodium.onboarded") ? "Tutup" : "Lewati";
   renderPicker();
   await openPanel(pickerPanel);
   searchInput.focus();
@@ -334,15 +385,6 @@ async function openPicker() {
 el("addBtn").addEventListener("click", openPicker);
 searchInput.addEventListener("input", renderPicker);
 el("pickerSkip").addEventListener("click", async () => { markOnboarded(); await closePanels(); });
-addSelectedBtn.addEventListener("click", async () => {
-  for (const cat of CATALOG) {
-    if (selected.has(cat.id) && !isAdded(cat)) services.push({ ...cat });
-  }
-  store.save(services); render();
-  selected.clear();
-  markOnboarded();
-  await closePanels();
-});
 
 // Custom URL form inside the picker
 buildPalette(el("customPalette"), (e) => { el("cIcon").value = e; clearCustomImg(); });
@@ -399,7 +441,9 @@ el("ctxIcon").addEventListener("click", async () => {
   el("iconTitle").textContent = "Ganti ikon: " + ctxService.name;
   el("iconText").value = "";
   el("iconMsg").textContent = "";
+  iconDraft = { color: ctxService.color || "#262a33", iconColor: ctxService.iconColor || "#ffffff" };
   refreshIconPanelImg();
+  refreshIconColors();
   await openPanel(iconPanel);
 });
 
@@ -409,6 +453,64 @@ function refreshIconPanelImg() {
   el("iconRemoveImg").hidden = !has;
   if (has) el("iconPreview").src = iconTarget.img;
 }
+
+// Tile / logo colours. The emoji palette and uploads apply at once
+// (existing behaviour); colours are a draft with a live preview and
+// only land when Simpan is clicked.
+const COLOR_SWATCHES = ["#ffffff", "#e8eaf0", "#9aa3b5", "#14161a", "#f5c518", "#1faa55", "#229ed9", "#1877f2", "#5865f2", "#c13584", "#e60023", "#ee4d2d", "#ff4500", "#42b549", "#611f69", "#b20710"];
+let iconDraft = { color: "#262a33", iconColor: "#ffffff" };
+
+function buildSwatches(container, key) {
+  container.innerHTML = "";
+  for (const c of COLOR_SWATCHES) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "swatch" + (iconDraft[key].toLowerCase() === c ? " sel" : "");
+    b.style.background = c;
+    b.title = c;
+    b.setAttribute("aria-label", "Warna " + c);
+    b.addEventListener("click", () => { iconDraft[key] = c; refreshIconColors(); });
+    container.appendChild(b);
+  }
+}
+
+function refreshIconColors() {
+  if (!iconTarget) return;
+  const hasImg = !!iconTarget.img;
+  // An uploaded image covers the whole button, so a logo colour
+  // cannot apply to it: that row is hidden while an image is set.
+  el("logoColorRow").hidden = hasImg;
+  buildSwatches(el("tilePalette"), "color");
+  buildSwatches(el("logoPalette"), "iconColor");
+  const pv = el("iconCombo");
+  pv.innerHTML = "";
+  pv.style.background = iconDraft.color;
+  if (hasImg) {
+    const im = document.createElement("img");
+    im.className = "svcImg"; im.src = iconTarget.img; im.alt = "";
+    pv.appendChild(im);
+  } else {
+    pv.appendChild(iconVisual({ brand: iconTarget.brand, icon: el("iconText").value.trim() || iconTarget.icon, name: iconTarget.name, iconColor: iconDraft.iconColor }, 28));
+  }
+}
+el("iconText").addEventListener("input", refreshIconColors);
+// Duplicate with a fresh, empty profile: same URL, icon and colours,
+// next free number in the name ("WhatsApp 2", "WhatsApp 3", ...). No
+// session or cookie is copied, so the copy is a clean sign-in for a
+// different account. Pin and disabled state are per-service and are
+// not inherited: the new id is in neither set.
+el("ctxDuplicate").addEventListener("click", async () => {
+  if (!ctxService) return;
+  const srcSvc = ctxService;
+  const base = srcSvc.name.replace(/\s+\d+$/, "");
+  let n = 2;
+  while (services.some(s => s.name === base + " " + n)) n++;
+  const copy = { ...srcSvc, id: srcSvc.id + "-d" + Date.now().toString(36), name: base + " " + n };
+  services.push(copy);
+  store.save(services);
+  render();
+  await closePanels();
+});
 el("ctxDisable").addEventListener("click", async () => {
   if (!ctxService) return;
   const id = ctxService.id;
@@ -467,7 +569,10 @@ buildPalette(el("iconPalette"), async (e) => {
 el("iconSave").addEventListener("click", async () => {
   if (!iconTarget) return;
   const v = el("iconText").value.trim();
-  if (v) { iconTarget.icon = v; delete iconTarget.img; store.save(services); render(); }
+  if (v) { iconTarget.icon = v; delete iconTarget.img; }
+  iconTarget.color = iconDraft.color;
+  iconTarget.iconColor = iconDraft.iconColor;
+  store.save(services); render();
   await closePanels();
 });
 el("iconCancel").addEventListener("click", closePanels);
