@@ -5,13 +5,6 @@ use tauri::webview::{
 };
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewUrl, WindowEvent};
 
-#[cfg(windows)]
-use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Notification, ICoreWebView2_24};
-#[cfg(windows)]
-use webview2_com::NotificationReceivedEventHandler;
-#[cfg(windows)]
-use windows::core::{Interface, PWSTR};
-
 /// Width of the sidebar rendered by Sodium's own UI (ui/index.html).
 const SIDEBAR_W: f64 = 76.0;
 
@@ -21,11 +14,6 @@ const TOPBAR_H: f64 = 44.0;
 
 /// Height of the link bar the UI shows above the link popup.
 const LINKBAR_H: f64 = 40.0;
-
-/// Height of the UI's notification strip (v0.4.1): while a service
-/// notification waits for an answer, the strip sits under the top bar
-/// and the service webviews move down by this much.
-const NOTIF_H: f64 = 46.0;
 
 /// Label of the link-popup webview. Deliberately not "service-"-prefixed:
 /// it is not a service (no eviction, no profile-per-service rules).
@@ -77,33 +65,9 @@ struct AppState {
     /// (not a WebviewWindow) because only `Window` can host child webviews
     /// via `add_child`.
     main_window: Mutex<Option<tauri::Window>>,
-    /// Latest unanswered notification per service id, kept so the page
-    /// can be told when the user clicks or dismisses Sodium's own
-    /// notification banner (see hook_notifications).
-    notifications: std::sync::Arc<Mutex<HashMap<String, NotificationHandle>>>,
-    /// Whether the UI's big notification strip is currently shown.
-    /// While it is, service webviews sit NOTIF_H lower so the strip
-    /// (rendered by the UI webview) is not covered by them.
-    notif_strip: Mutex<bool>,
     /// Payload of the floating right-click menu window (see CtxPayload).
     ctx_payload: Mutex<Option<CtxPayload>>,
 }
-
-/// A live WebView2 notification object. `ReportClicked` on it makes
-/// the page raise its notification click event (e.g. WhatsApp opens
-/// the exact conversation). Only ever *used* on the UI thread, inside
-/// `with_webview` closures; the wrapper's unsafe Send/Sync exists so
-/// it can be stored in app state between the event and the click.
-#[cfg(windows)]
-struct NotificationHandle(ICoreWebView2Notification);
-
-#[cfg(windows)]
-unsafe impl Send for NotificationHandle {}
-#[cfg(windows)]
-unsafe impl Sync for NotificationHandle {}
-
-#[cfg(not(windows))]
-struct NotificationHandle;
 
 fn label_for(id: &str) -> String {
     format!("service-{id}")
@@ -127,37 +91,15 @@ fn full_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f64
 }
 
 /// Bounds for a service webview: right of the sidebar, below the top
-/// bar — and below the notification strip while that is shown.
-fn service_bounds(
-    window: &tauri::Window,
-    strip: bool,
-) -> (LogicalPosition<f64>, LogicalSize<f64>) {
-    let top = if strip { TOPBAR_H + NOTIF_H } else { TOPBAR_H };
+/// bar.
+fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f64>) {
     let size = logical_inner_size(window);
     let w = size.width.max(SIDEBAR_W + 100.0);
-    let h = size.height.max(top + 100.0);
+    let h = size.height.max(TOPBAR_H + 100.0);
     (
-        LogicalPosition::new(SIDEBAR_W, top),
-        LogicalSize::new(w - SIDEBAR_W, h - top),
+        LogicalPosition::new(SIDEBAR_W, TOPBAR_H),
+        LogicalSize::new(w - SIDEBAR_W, h - TOPBAR_H),
     )
-}
-
-/// Show or hide the notification strip's space: records the flag and
-/// repositions every alive service webview to match. Called by the UI
-/// together with showing/hiding the strip itself.
-#[tauri::command]
-fn set_notif_strip(app: tauri::AppHandle, state: State<'_, AppState>, visible: bool) {
-    *state.notif_strip.lock().unwrap() = visible;
-    let window = state.main_window.lock().unwrap().clone();
-    if let Some(window) = window {
-        let (pos, size) = service_bounds(&window, visible);
-        for wv in app.webviews().values() {
-            if wv.label().starts_with("service-") {
-                let _ = wv.set_position(pos);
-                let _ = wv.set_size(size);
-            }
-        }
-    }
 }
 
 /// Build the download handler for a service or popup webview.
@@ -250,141 +192,6 @@ fn shortcut_index(code: tauri_plugin_global_shortcut::Code) -> Option<usize> {
         Code::Digit8 => Some(7),
         Code::Digit9 => Some(8),
         _ => None,
-    }
-}
-
-/// Notification click fix (Windows / WebView2).
-///
-/// WebView2 shows a service's web notifications as its own toasts, but
-/// a click on one only reaches the page while its webview is alive and
-/// on screen — with Sodium's one-alive default the click usually went
-/// nowhere (the long-standing "clicking a notification does nothing"
-/// complaint). Since WebView2 SDK 1.0.2739 the host can take over:
-/// NotificationReceived fires for every notification; marking it
-/// Handled suppresses WebView2's toast, and the host then reports
-/// shown / clicked / closed back to the page itself. Sodium shows a
-/// real Windows toast (via the notification plugin) plus a big
-/// clickable strip under its top bar, and reports the strip's click,
-/// so the page opens the exact conversation.
-///
-/// Every failure path deliberately keeps the old behaviour: if the
-/// interface is missing (older WebView2 runtime) or any read fails,
-/// the event is left unhandled and WebView2 shows its own toast.
-#[cfg(windows)]
-fn hook_notifications(
-    app: &tauri::AppHandle,
-    notifications: &std::sync::Arc<Mutex<HashMap<String, NotificationHandle>>>,
-    id: &str,
-    webview: &tauri::Webview,
-) {
-    let app = app.clone();
-    let notifications = notifications.clone();
-    let id = id.to_string();
-    let _ = webview.with_webview(move |pw| {
-        let controller = pw.controller();
-        let Ok(core) = (unsafe { controller.CoreWebView2() }) else {
-            return;
-        };
-        let Ok(core24) = core.cast::<ICoreWebView2_24>() else {
-            return;
-        };
-        let handler = NotificationReceivedEventHandler::create(Box::new(
-            move |_sender, args| {
-                let Some(args) = args else { return Ok(()) };
-                let title;
-                let body;
-                unsafe {
-                    let notification = args.Notification()?;
-                    let mut raw_title = PWSTR::null();
-                    notification.Title(&mut raw_title)?;
-                    let mut raw_body = PWSTR::null();
-                    notification.Body(&mut raw_body)?;
-                    title = webview2_com::take_pwstr(raw_title);
-                    body = webview2_com::take_pwstr(raw_body);
-                    args.SetHandled(true)?;
-                    let _ = notification.ReportShown();
-                    let old = notifications
-                        .lock()
-                        .unwrap()
-                        .insert(id.clone(), NotificationHandle(notification));
-                    if let Some(old) = old {
-                        let _ = old.0.ReportClosed();
-                    }
-                }
-                let _ = app.emit_to(
-                    UI_LABEL,
-                    "notification-received",
-                    (id.clone(), title.clone(), body.clone()),
-                );
-                // Show a real Windows toast too (v0.4.1): the first
-                // version of this takeover only lit a small banner
-                // inside Sodium's top bar, which Agung found too easy
-                // to miss — a notification should pop over other apps
-                // like a normal Windows one. The in-app strip (now
-                // big, under the top bar) remains the reliable click
-                // target that opens the exact conversation.
-                {
-                    use tauri_plugin_notification::NotificationExt;
-                    let t = if title.is_empty() { id.clone() } else { title };
-                    let _ = app.notification().builder().title(t).body(body).show();
-                }
-                if let Some(window) = app.get_window("main") {
-                    let _ = window
-                        .request_user_attention(Some(tauri::UserAttentionType::Informational));
-                }
-                Ok(())
-            },
-        ));
-        let mut token: i64 = 0;
-        let _ = unsafe { core24.add_NotificationReceived(&handler, &mut token) };
-    });
-}
-
-#[cfg(not(windows))]
-fn hook_notifications(
-    _app: &tauri::AppHandle,
-    _notifications: &std::sync::Arc<Mutex<HashMap<String, NotificationHandle>>>,
-    _id: &str,
-    _webview: &tauri::Webview,
-) {
-}
-
-/// The user clicked (or dismissed) Sodium's notification banner for a
-/// service: report it back to the page — a click raises the page's
-/// notification click event (e.g. WhatsApp opens the exact chat) — and
-/// close the notification either way. The COM calls run inside
-/// `with_webview`, i.e. on the UI thread that owns the objects.
-#[tauri::command]
-fn notification_action(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    id: String,
-    clicked: bool,
-) {
-    let handle = state.notifications.lock().unwrap().remove(&id);
-    if let Some(handle) = handle {
-        if let Some(wv) = app.get_webview(&label_for(&id)) {
-            // Through an Arc on purpose: a closure that touches
-            // `handle.0` directly captures the raw COM interface,
-            // which is !Send and fails with_webview's Send bound;
-            // field access through the Arc captures the whole
-            // (Send) wrapper instead.
-            let handle = std::sync::Arc::new(handle);
-            let _ = wv.with_webview(move |_| {
-                #[cfg(windows)]
-                unsafe {
-                    if clicked {
-                        let _ = handle.0.ReportClicked();
-                    }
-                    let _ = handle.0.ReportClosed();
-                }
-                #[cfg(not(windows))]
-                let _ = &handle;
-            });
-        }
-    }
-    if let Some(window) = app.get_window("main") {
-        let _ = window.request_user_attention(None);
     }
 }
 
@@ -619,17 +426,12 @@ async fn switch_service(
                     (id_for_title.clone(), count),
                 );
             });
-        let (pos, size) = service_bounds(&window, *state.notif_strip.lock().unwrap());
+        let (pos, size) = service_bounds(&window);
         window
             .add_child(builder, pos, size)
             .map_err(|e| e.to_string())?;
-        // Take over this service's notifications so clicking one can
-        // actually open the conversation (see hook_notifications).
-        if let Some(wv) = app.get_webview(&label) {
-            hook_notifications(&app, &state.notifications, &id, &wv);
-        }
     } else if let Some(wv) = app.get_webview(&label) {
-        let (pos, size) = service_bounds(&window, *state.notif_strip.lock().unwrap());
+        let (pos, size) = service_bounds(&window);
         let _ = wv.set_position(pos);
         let _ = wv.set_size(size);
         let _ = wv.set_focus();
@@ -836,7 +638,6 @@ fn close_service(app: tauri::AppHandle, state: State<'_, AppState>, id: String) 
     if let Some(wv) = app.get_webview(&label) {
         let _ = wv.close();
     }
-    state.notifications.lock().unwrap().remove(&id);
     let _ = app.emit_to(UI_LABEL, "unread-changed", (id.clone(), 0usize));
     state.alive_mru.lock().unwrap().retain(|l| l != &label);
     let mut active = state.active.lock().unwrap();
@@ -904,9 +705,6 @@ pub fn run() {
                 })
                 .build(),
         )
-        // System notifications (v0.4.1): Sodium shows a real Windows
-        // toast for each service notification it takes over.
-        .plugin(tauri_plugin_notification::init())
         .manage(AppState {
             max_alive: Mutex::new(1),
             zoom: Mutex::new(HashMap::new()),
@@ -934,21 +732,6 @@ pub fn run() {
                     .handle()
                     .global_shortcut()
                     .register_multiple(digit_shortcuts());
-            }
-            // A tap on Sodium's system toast brings the main window
-            // forward (the in-app strip then offers the click that
-            // opens the exact conversation). Best effort: Windows only
-            // reports taps while the toast is on screen.
-            {
-                use tauri_plugin_notification::NotificationExt;
-                let handle = app.handle().clone();
-                let _ = app.notification().on_action(move |_| {
-                    if let Some(w) = handle.get_window("main") {
-                        let _ = w.unminimize();
-                        let _ = w.show();
-                        let _ = w.set_focus();
-                    }
-                });
             }
             let size = window.inner_size()?;
             let ui_builder = WebviewBuilder::new(UI_LABEL, WebviewUrl::App("index.html".into()));
@@ -980,9 +763,7 @@ pub fn run() {
             close_link_popup,
             open_external,
             alive_services,
-            notification_action,
             set_service_dim,
-            set_notif_strip,
             open_ctx_menu,
             ctx_payload,
             ctx_action,
@@ -1027,8 +808,7 @@ pub fn run() {
             if let WindowEvent::Resized(_) = event {
                 let app = window.app_handle();
                 let (ui_pos, ui_size) = full_bounds(window);
-                let strip = *app.state::<AppState>().notif_strip.lock().unwrap();
-                let (pos, size) = service_bounds(window, strip);
+                let (pos, size) = service_bounds(window);
                 for wv in app.webviews().values() {
                     if wv.label() == UI_LABEL {
                         let _ = wv.set_position(ui_pos);

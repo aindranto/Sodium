@@ -961,54 +961,6 @@ window.__TAURI__.event.listen("download-finished", (e) => {
   toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
 });
 
-// Notifications (v0.3.3, reworked v0.4.1): WebView2's own toast
-// could not deliver its click to a hidden/destroyed webview, so Rust
-// takes notifications over. It shows a real Windows toast (via the
-// notification plugin) and forwards the notification here, where a
-// big yellow strip appears under the top bar — Rust moves the
-// service webviews down so the strip stays visible and clickable.
-// Clicking the strip reports the click back to the page (WhatsApp
-// then opens the exact chat) and switches to the service; the ✕ or
-// a 30 s timeout reports it dismissed instead.
-let notifTimer = null;
-let notifPending = null; // service id with an unanswered notification
-function hideNotifStrip() {
-  el("notifStrip").hidden = true;
-  notifPending = null;
-  clearTimeout(notifTimer);
-  invoke("set_notif_strip", { visible: false }).catch(() => {});
-}
-async function answerNotification(clicked) {
-  const id = notifPending;
-  hideNotifStrip();
-  if (!id) return;
-  try { await invoke("notification_action", { id, clicked }); } catch { /* page may be gone */ }
-  if (clicked) {
-    const s = services.find(x => x.id === id);
-    if (s) switchTo(s);
-  }
-}
-window.__TAURI__.event.listen("notification-received", (e) => {
-  const [id, title, body] = e.payload || [];
-  if (!id) return;
-  const s = services.find(x => x.id === id);
-  const name = s ? s.name : id;
-  notifPending = id;
-  el("notifText").textContent =
-    name + (title ? " — " + title : "") + (body ? ": " + body : "");
-  el("notifStrip").title =
-    (title ? title + "\n" : "") + (body || "") + "\nKlik untuk membuka";
-  el("notifStrip").hidden = false;
-  invoke("set_notif_strip", { visible: true }).catch(() => {});
-  clearTimeout(notifTimer);
-  notifTimer = setTimeout(() => answerNotification(false), 30000);
-});
-el("notifStrip").addEventListener("click", () => answerNotification(true));
-el("notifClose").addEventListener("click", (e) => {
-  e.stopPropagation();
-  answerNotification(false);
-});
-
 // Version label in the top bar, read from the app itself so it can
 // never go stale or disagree with the installed build. If the read
 // fails the label stays empty: no version shown beats a wrong one.
