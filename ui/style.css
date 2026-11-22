@@ -6,7 +6,8 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 .svc{width:48px;height:48px;border-radius:14px;border:2px solid transparent;background:#262a33;color:#e8eaf0;font-size:18px;font-weight:700;cursor:pointer;position:relative;overflow:hidden;padding:0}
 .svc:hover{background:#2f3441}
 .svc.active{border-color:#f5c518;background:#2f3441}
-.svc .pin{position:absolute;top:2px;right:2px;font-size:10px;z-index:2}
+.svc .pin{position:absolute;top:3px;left:3px;width:8px;height:8px;border-radius:50%;background:#f5c518;z-index:2}
+.svc .badge{position:absolute;top:1px;right:1px;min-width:17px;height:17px;border-radius:9px;background:#e5484d;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;z-index:2}
 .svcImg{width:100%;height:100%;object-fit:cover;display:block}
 .svc.disabled{filter:grayscale(1);opacity:.4}
 .svc.disabled:hover{background:#262a33}
