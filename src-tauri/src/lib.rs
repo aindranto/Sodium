@@ -437,6 +437,17 @@ fn alive_services(state: State<'_, AppState>) -> Vec<String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Single instance: a second launch must not fight the first one
+        // over the same WebView2 profile folders (they are locked per
+        // process). Focus the existing window instead. This plugin has
+        // to be registered first.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .manage(AppState {
             max_alive: Mutex::new(1),
             zoom: Mutex::new(HashMap::new()),
