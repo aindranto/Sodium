@@ -474,6 +474,19 @@ el("linkCopy").addEventListener("click", async () => {
   setTimeout(() => { el("linkCopy").textContent = "Salin link"; }, 1500);
 });
 
+// Download toast: Rust reports the saved path when a download finishes.
+let toastTimer = null;
+window.__TAURI__.event.listen("download-finished", (e) => {
+  const path = String(e.payload || "");
+  if (!path) return;
+  const toast = el("toast");
+  toast.textContent = "Tersimpan: " + path;
+  toast.title = path;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
+});
+
 // Keyboard shortcuts: Ctrl/Cmd + 1..9
 window.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && /^[1-9]$/.test(e.key)) {
