@@ -96,7 +96,7 @@ fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<
 fn make_download_handler(
     app: tauri::AppHandle,
     download_dir: std::sync::Arc<Mutex<std::path::PathBuf>>,
-) -> impl FnMut(tauri::Webview, DownloadEvent) -> bool + Send + 'static {
+) -> impl Fn(tauri::Webview, DownloadEvent) -> bool + Send + Sync + 'static {
     move |_webview, event| {
         match event {
             DownloadEvent::Requested { destination, .. } => {
