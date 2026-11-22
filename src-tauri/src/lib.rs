@@ -31,6 +31,21 @@ const NOTIF_H: f64 = 46.0;
 /// it is not a service (no eviction, no profile-per-service rules).
 const POPUP_LABEL: &str = "link-popup";
 
+/// Label of the floating right-click menu window (v0.4.2).
+const CTX_LABEL: &str = "ctx-menu";
+
+/// What the floating right-click menu is currently showing, kept in
+/// state so the menu page can fetch it on load (it may be told to
+/// show before its page has finished loading; live updates are also
+/// sent as a "ctx-show" event).
+#[derive(Clone, serde::Serialize)]
+struct CtxPayload {
+    id: String,
+    name: String,
+    pinned: bool,
+    disabled: bool,
+}
+
 /// Label of the webview that renders Sodium's own UI inside the main window.
 const UI_LABEL: &str = "ui";
 
@@ -70,6 +85,8 @@ struct AppState {
     /// While it is, service webviews sit NOTIF_H lower so the strip
     /// (rendered by the UI webview) is not covered by them.
     notif_strip: Mutex<bool>,
+    /// Payload of the floating right-click menu window (see CtxPayload).
+    ctx_payload: Mutex<Option<CtxPayload>>,
 }
 
 /// A live WebView2 notification object. `ReportClicked` on it makes
@@ -389,6 +406,76 @@ fn set_service_dim(app: tauri::AppHandle, id: String, dim: bool) {
     if let Some(wv) = app.get_webview(&label_for(&id)) {
         let _ = wv.eval(if dim { DIM_ON_JS } else { DIM_OFF_JS });
     }
+}
+
+/// Show the floating right-click menu window at the given screen
+/// position (logical pixels). The menu is a separate borderless
+/// top-level window because the in-UI panel it replaces was painted
+/// over by the native service webview (the v0.4.0 bug): a top-level
+/// window floats above everything, so the service behind it can stay
+/// visible — dimmed, full size — while the menu is up. The window is
+/// created once and reused; it hides itself when it loses focus
+/// (see the window-event handler in run()).
+#[tauri::command]
+fn open_ctx_menu(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    pinned: bool,
+    disabled: bool,
+    x: f64,
+    y: f64,
+) -> Result<(), String> {
+    let payload = CtxPayload { id, name, pinned, disabled };
+    *state.ctx_payload.lock().unwrap() = Some(payload.clone());
+    if let Some(w) = app.get_webview_window(CTX_LABEL) {
+        let _ = w.set_position(LogicalPosition::new(x, y));
+        let _ = app.emit_to(CTX_LABEL, "ctx-show", payload);
+        let _ = w.show();
+        let _ = w.set_focus();
+    } else {
+        tauri::WebviewWindowBuilder::new(&app, CTX_LABEL, tauri::WebviewUrl::App("ctx.html".into()))
+            .title("Menu layanan")
+            .inner_size(250.0, 220.0)
+            .position(x, y)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .focused(true)
+            .build()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// The menu page fetches what to show when it (re)loads.
+#[tauri::command]
+fn ctx_payload(state: State<'_, AppState>) -> Option<CtxPayload> {
+    state.ctx_payload.lock().unwrap().clone()
+}
+
+fn hide_ctx_menu(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window(CTX_LABEL) {
+        let _ = w.hide();
+    }
+    let _ = app.emit_to(UI_LABEL, "ctx-closed", ());
+}
+
+/// Close the floating menu (Escape inside it, or the UI asking).
+#[tauri::command]
+fn close_ctx_menu(app: tauri::AppHandle) {
+    hide_ctx_menu(&app);
+}
+
+/// A button in the floating menu was clicked: forward the choice to
+/// the main UI — it owns the services and their state — and close
+/// the menu.
+#[tauri::command]
+fn ctx_action(app: tauri::AppHandle, id: String, action: String) {
+    let _ = app.emit_to(UI_LABEL, "ctx-action", (id, action));
+    hide_ctx_menu(&app);
 }
 
 /// Unread count from a service page title. Services put it in the
@@ -895,9 +982,21 @@ pub fn run() {
             alive_services,
             notification_action,
             set_service_dim,
-            set_notif_strip
+            set_notif_strip,
+            open_ctx_menu,
+            ctx_payload,
+            ctx_action,
+            close_ctx_menu
         ])
         .on_window_event(|window, event| {
+            // The floating right-click menu closes when it loses
+            // focus, like a native context menu.
+            if window.label() == CTX_LABEL {
+                if let WindowEvent::Focused(false) = event {
+                    hide_ctx_menu(window.app_handle());
+                }
+                return;
+            }
             // Keep the UI and service webviews filling the main window.
             if window.label() != "main" {
                 return;
