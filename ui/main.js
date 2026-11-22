@@ -96,16 +96,31 @@ const allPanels = [pickerPanel, ctxPanel, iconPanel];
 let ctxService = null;
 let iconTarget = null;
 
+let lastFocus = null;
 async function openPanel(panel) {
+  lastFocus = document.activeElement;
   for (const p of allPanels) p.hidden = true;
   await invoke("set_services_visible", { visible: false });
   panel.hidden = false;
+  const f = panel.querySelector("input:not([type='file']), button:not([disabled])");
+  if (f) f.focus();
 }
 
 async function closePanels() {
   for (const p of allPanels) p.hidden = true;
   await invoke("set_services_visible", { visible: true });
+  if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
 }
+
+// Clicking outside an open panel (welcome area, top bar) closes it.
+// Sidebar clicks are excluded: they run their own open/switch logic.
+document.addEventListener("click", (e) => {
+  const open = allPanels.find(p => !p.hidden);
+  if (!open) return;
+  if (open.contains(e.target)) return;
+  if (e.target.closest("#sidebar")) return;
+  closePanels();
+});
 
 function buildPalette(container, onPick) {
   container.innerHTML = "";
@@ -176,7 +191,8 @@ function render() {
   for (const s of services) {
     const b = document.createElement("button");
     b.className = "svc" + (s.id === activeId ? " active" : "") + (disabled.has(s.id) ? " disabled" : "");
-    b.title = s.name + (pinned.has(s.id) ? " (pinned - tetap hidup)" : "") + (disabled.has(s.id) ? " (nonaktif — klik untuk mengaktifkan lagi)" : "");
+    b.title = s.name + (pinned.has(s.id) ? " (pinned - tetap hidup)" : "") + (disabled.has(s.id) ? " (nonaktif, klik untuk mengaktifkan lagi)" : "");
+    b.setAttribute("aria-label", b.title);
     if (s.img) {
       const im = document.createElement("img");
       im.className = "svcImg"; im.src = s.img; im.alt = "";
@@ -227,10 +243,12 @@ async function switchTo(s) {
     showZoom();
     const alive = await invoke("alive_services");
     el("ramNote").textContent = "";
+    el("ramNote").classList.remove("error");
     console.log("Sodium alive webviews:", alive);
   } catch (err) {
     el("welcome").style.display = "block";
     el("ramNote").textContent = "Gagal membuka " + s.name + ": " + err;
+    el("ramNote").classList.add("error");
   }
 }
 
@@ -277,6 +295,14 @@ function renderPicker() {
       });
     }
     grid.appendChild(t);
+  }
+  if (!grid.children.length) {
+    const d = document.createElement("div");
+    d.className = "pickerEmpty";
+    d.textContent = q
+      ? "Tidak ada layanan yang cocok dengan \"" + searchInput.value.trim() + "\". Coba kata lain, atau tambah lewat form custom URL di bawah."
+      : "Semua layanan di katalog sudah ditambahkan.";
+    grid.appendChild(d);
   }
   updateAddBtn();
 }
@@ -356,7 +382,7 @@ el("ctxPin").addEventListener("click", async () => {
 el("ctxIcon").addEventListener("click", async () => {
   if (!ctxService) return;
   iconTarget = ctxService;
-  el("iconTitle").textContent = "Ganti ikon — " + ctxService.name;
+  el("iconTitle").textContent = "Ganti ikon: " + ctxService.name;
   el("iconText").value = "";
   el("iconMsg").textContent = "";
   refreshIconPanelImg();
@@ -511,6 +537,14 @@ window.__TAURI__.event.listen("download-finished", (e) => {
   toast.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
+});
+
+// Ctrl+1..9 also arrives from Rust as a global shortcut while the
+// Sodium window is focused (registered on window focus, released on
+// blur), because keydown inside a service webview never reaches this UI.
+window.__TAURI__.event.listen("shortcut-switch", (e) => {
+  const s = services[Number(e.payload)];
+  if (s) switchTo(s);
 });
 
 // Keyboard: Escape closes the link popup or any open panel;
