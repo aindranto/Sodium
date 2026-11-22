@@ -302,6 +302,12 @@ fn notification_action(
     let handle = state.notifications.lock().unwrap().remove(&id);
     if let Some(handle) = handle {
         if let Some(wv) = app.get_webview(&label_for(&id)) {
+            // Through an Arc on purpose: a closure that touches
+            // `handle.0` directly captures the raw COM interface,
+            // which is !Send and fails with_webview's Send bound;
+            // field access through the Arc captures the whole
+            // (Send) wrapper instead.
+            let handle = std::sync::Arc::new(handle);
             let _ = wv.with_webview(move |_| {
                 #[cfg(windows)]
                 unsafe {
