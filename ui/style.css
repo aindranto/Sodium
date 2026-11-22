@@ -55,12 +55,15 @@ body{margin:0;font-family:system-ui,sans-serif;background:#14161a;color:#e8eaf0;
 #ramNote.error{color:#f0b4b8;font-weight:600}
 .pickerEmpty{grid-column:1/-1;color:#9aa3b5;font-size:13px;padding:18px 4px;line-height:1.5}
 
-.picker{position:fixed;left:92px;right:16px;top:56px;bottom:16px;background:#1b1e24;color:#e8eaf0;border:1px solid #333947;border-radius:16px;padding:20px;z-index:30;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.picker{position:fixed;left:calc(76px + (100vw - 76px)/2);top:calc(44px + (100vh - 44px)/2);transform:translate(-50%,-50%);width:min(620px,calc(100vw - 108px));max-height:min(640px,calc(100vh - 96px));background:#1b1e24;color:#e8eaf0;border:1px solid #333947;border-radius:16px;padding:20px;z-index:30;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+#scrim{position:fixed;left:76px;top:44px;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:25}
+#scrim[hidden]{display:none}
+.appVersion{font-size:12px;color:#9aa3b5;white-space:nowrap}
 .picker[hidden]{display:none}
 .pickerHead{display:flex;gap:12px;align-items:center;justify-content:space-between}
 .pickerHead h3{margin:0;font-size:18px}
 #pickerSearch{flex:0 1 280px;padding:9px;border-radius:8px;border:1px solid #333947;background:#14161a;color:#e8eaf0}
-.pickerGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;overflow-y:auto;margin:16px 0;padding-right:4px}
+.pickerGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;overflow-y:auto;margin:16px 0;padding-right:4px;flex:1;min-height:0}
 .tile{position:relative;background:#262a33;border:2px solid transparent;border-radius:14px;padding:14px 6px 10px;color:#e8eaf0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px}
 .tile:hover{background:#2f3441}
 .tile.selected{border-color:#f5c518}
