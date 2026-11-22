@@ -72,7 +72,6 @@
     </div>
     <div class="pickerFoot">
       <button id="pickerSkip" class="btnGhost">Lewati</button>
-      <button id="addSelected" class="btnPrimary" disabled>Tambah (0)</button>
     </div>
   </div>
 
@@ -81,6 +80,7 @@
     <div class="panelBtns col">
       <button id="ctxPin" class="btnPrimary">Pin (tetap hidup buat notif)</button>
       <button id="ctxIcon" class="btnGhost">Ganti ikon</button>
+      <button id="ctxDuplicate" class="btnGhost">Duplikat (akun beda)</button>
       <button id="ctxDisable" class="btnGhost">Nonaktifkan layanan</button>
       <button id="ctxDelete" class="btnDanger">Hapus layanan</button>
       <button id="ctxClose" class="btnGhost">Tutup</button>
@@ -91,6 +91,18 @@
     <h3 id="iconTitle">Ganti ikon</h3>
     <div id="iconPalette" class="palette"></div>
     <label>Ikon sendiri (emoji / 1-2 huruf) <input id="iconText" maxlength="8" placeholder="mis. 💬"/></label>
+    <div class="colorRow">
+      <span>Warna tile</span>
+      <div id="tilePalette" class="swatches"></div>
+    </div>
+    <div class="colorRow" id="logoColorRow">
+      <span>Warna logo</span>
+      <div id="logoPalette" class="swatches"></div>
+    </div>
+    <div class="colorRow">
+      <span>Pratinjau</span>
+      <span id="iconCombo" class="tileIcon"></span>
+    </div>
     <div class="imgRow">
       <img id="iconPreview" class="iconPreview" hidden/>
       <button id="iconUploadBtn" class="btnGhost">Upload gambar (.jpg / .png / .ico)</button>
@@ -104,6 +116,7 @@
     </div>
   </div>
 
+<script src="icons.js"></script>
 <script src="main.js"></script>
 </body>
 </html>
