@@ -32,6 +32,7 @@ Analisis lengkap mengenai kode sumber Ferdium dan pertimbangan desainnya tersedi
 - **Bar atas** berisi nama layanan yang sedang aktif, tombol **muat ulang** layanan, **zoom** tampilan layanan (50%–200%, tersimpan secara permanen), pengaturan *Hidup bareng*, indikator unduhan, dan tombol **Cek update**.
 - **Pin** layanan agar selalu aktif (misalnya WhatsApp untuk notifikasi), **nonaktifkan** layanan untuk mematikannya secara total untuk sementara tanpa kehilangan sesi masuk, serta pintasan **Ctrl+1..9** untuk berpindah layanan.
 - **Tray & jalan di latar**: menutup jendela menyembunyikan Sodium ke system tray — layanan tetap hidup dan notifikasi tetap berjalan; keluar sepenuhnya melalui menu tray. Layanan yang di-pin **menyala otomatis saat startup** secara tersembunyi, jadi notifikasinya bekerja sejak awal.
+- **Tema Obsidian Na** — tema gelap netral nyaris hitam dengan satu aksen kuning Na, token warna CSS, dan animasi mikro halus (panel membuka lembut, indikator aktif meluncur di sidebar, badge unread memantul saat bertambah). Mati otomatis bila Windows disetel mengurangi animasi.
 - **Tarik & letakkan file** langsung ke halaman layanan (misalnya melampirkan file di WhatsApp), sama seperti di browser.
 - **Unduhan**: dialog Simpan Sebagai, indikator unduhan yang sedang berjalan di bar atas, dan panel **riwayat unduhan** dengan tombol buka folder.
 - **Cek update**: tombol di bar atas (ditambah pemeriksaan otomatis sekali sehari) membandingkan versi terpasang dengan rilis terbaru di GitHub dan mengarahkan ke unduhan installer versi baru.
