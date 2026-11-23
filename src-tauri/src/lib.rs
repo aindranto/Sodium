@@ -50,6 +50,9 @@ struct AppState {
     /// (not a WebviewWindow) because only `Window` can host child webviews
     /// via `add_child`.
     main_window: Mutex<Option<tauri::Window>>,
+    /// True once the tray icon exists; only then may closing the
+    /// window mean hiding it (otherwise the app would be stranded).
+    tray_ok: std::sync::atomic::AtomicBool,
 }
 
 fn label_for(id: &str) -> String {
@@ -103,11 +106,12 @@ fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<
 
 /// Download handler for a service or popup webview: without it,
 /// downloads silently go nowhere. Answers with the native Save As
-/// dialog (Downloads first, then the last folder used); a finished
-/// download is reported to the UI for its toast.
+/// dialog (Downloads first, then the last folder used) and reports
+/// start/finish to the UI for its indicator and history.
 fn make_download_handler(
     app: tauri::AppHandle,
     download_dir: std::sync::Arc<Mutex<std::path::PathBuf>>,
+    source: String,
 ) -> impl Fn(tauri::Webview, DownloadEvent) -> bool + Send + Sync + 'static {
     move |_webview, event| {
         match event {
@@ -127,22 +131,28 @@ fn make_download_handler(
                         if let Some(parent) = path.parent() {
                             *download_dir.lock().unwrap() = parent.to_path_buf();
                         }
+                        let name = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or(suggested);
                         *destination = path;
+                        let _ = app.emit_to(UI_LABEL, "download-started", name);
                         true
                     }
                     None => false,
                 }
             }
             DownloadEvent::Finished { path, success, .. } => {
-                if success {
-                    if let Some(p) = &path {
-                        let _ = app.emit_to(
-                            UI_LABEL,
-                            "download-finished",
-                            p.to_string_lossy().into_owned(),
-                        );
-                    }
-                }
+                let saved = if success {
+                    path.as_ref().map(|p| p.to_string_lossy().into_owned())
+                } else {
+                    None
+                };
+                let _ = app.emit_to(
+                    UI_LABEL,
+                    "download-finished",
+                    (saved, source.clone(), success),
+                );
                 true
             }
             _ => true,
@@ -260,6 +270,139 @@ fn popup_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<f6
     (LogicalPosition::new(x, y), LogicalSize::new(w, h))
 }
 
+/// Create one service webview (not yet shown): its own profile
+/// folder, link clicks diverted to the popup, downloads handled,
+/// title changes forwarded as unread counts.
+fn create_service_webview(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    window: &tauri::Window,
+    id: &str,
+    url: &str,
+) -> Result<(), String> {
+    let label = label_for(id);
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("profiles")
+        .join(id);
+    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    let parsed = tauri::Url::parse(url).map_err(|e| e.to_string())?;
+    // Links that ask for a new window (target=_blank, window.open)
+    // would be silently dropped by WebView2. Deny the window and
+    // tell the UI instead: it shows the link popup over the service.
+    let app_for_links = app.clone();
+    let app_for_title = app.clone();
+    let id_for_title = id.to_string();
+    let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
+        .data_directory(data_dir)
+        .on_new_window(move |u, _features| {
+            let _ = app_for_links.emit_to(UI_LABEL, "link-clicked", u.to_string());
+            NewWindowResponse::Deny
+        })
+        .on_download(make_download_handler(
+            app.clone(),
+            state.download_dir.clone(),
+            id.to_string(),
+        ))
+        .on_document_title_changed(move |_wv, title| {
+            let count = parse_unread(&title);
+            let _ = app_for_title.emit_to(
+                UI_LABEL,
+                "unread-changed",
+                (id_for_title.clone(), count),
+            );
+        });
+    let (pos, size) = service_bounds(window);
+    window
+        .add_child(builder, pos, size)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Create a pinned service's webview at startup without showing
+/// it, so its notifications work from boot. Async for the same
+/// WebView2 reason as switch_service.
+#[tauri::command]
+async fn start_service_hidden(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    url: String,
+) -> Result<(), String> {
+    if !valid_id(&id) {
+        return Err("invalid service id".into());
+    }
+    if !valid_url(&url) {
+        return Err("invalid service url".into());
+    }
+    let label = label_for(&id);
+    if app.get_webview(&label).is_some() {
+        return Ok(());
+    }
+    let window = state
+        .main_window
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("main window missing")?;
+    create_service_webview(&app, &state, &window, &id, &url)?;
+    if let Some(wv) = app.get_webview(&label) {
+        let z = state.zoom.lock().unwrap().get(&id).copied().unwrap_or(1.0);
+        let _ = wv.set_zoom(z);
+        let _ = wv.hide();
+    }
+    let mut mru = state.alive_mru.lock().unwrap();
+    if !mru.contains(&label) {
+        mru.push(label);
+    }
+    Ok(())
+}
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// System tray icon: left-click brings the window back, the menu
+/// offers Buka/Keluar. Quitting only happens from that menu —
+/// closing the window hides it instead (see on_window_event).
+fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    let open_item = MenuItem::with_id(app, "tray-open", "Buka Sodium", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "tray-quit", "Keluar", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+    let mut builder = TrayIconBuilder::with_id("main-tray")
+        .tooltip("Sodium")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "tray-open" => show_main_window(app),
+            "tray-quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 /// Switch to a service. Over the "Hidup bareng" limit, the
 /// least-recently-used non-pinned webview is destroyed (sessions
 /// survive in its on-disk profile). Async on purpose: creating a
@@ -294,45 +437,7 @@ async fn switch_service(
                 evict_down_to(&app, &state, max - 1);
             }
         }
-        let data_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())?
-            .join("profiles")
-            .join(&id);
-        std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-        let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
-        // Links that ask for a new window (target=_blank, window.open)
-        // would be silently dropped by WebView2. Deny the window and
-        // tell the UI instead: it shows the link popup over the service.
-        let app_for_links = app.clone();
-        let app_for_title = app.clone();
-        let id_for_title = id.clone();
-        let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
-            .data_directory(data_dir)
-            .on_new_window(move |u, _features| {
-                let _ = app_for_links.emit_to(UI_LABEL, "link-clicked", u.to_string());
-                NewWindowResponse::Deny
-            })
-            .on_download(make_download_handler(
-                app.clone(),
-                state.download_dir.clone(),
-            ))
-            // Unread badge: services announce unread chats in their
-            // page title ("(3) WhatsApp"); forward the parsed count to
-            // the UI, which draws the number on the sidebar icon.
-            .on_document_title_changed(move |_wv, title| {
-                let count = parse_unread(&title);
-                let _ = app_for_title.emit_to(
-                    UI_LABEL,
-                    "unread-changed",
-                    (id_for_title.clone(), count),
-                );
-            });
-        let (pos, size) = service_bounds(&window);
-        window
-            .add_child(builder, pos, size)
-            .map_err(|e| e.to_string())?;
+        create_service_webview(&app, &state, &window, &id, &url)?;
     } else if let Some(wv) = app.get_webview(&label) {
         let (pos, size) = service_bounds(&window);
         let _ = wv.set_position(pos);
@@ -497,6 +602,7 @@ async fn open_link_popup(
             .on_download(make_download_handler(
                 app.clone(),
                 state.download_dir.clone(),
+                "link-popup".to_string(),
             ));
         let (pos, size) = popup_bounds(&window);
         window
@@ -612,6 +718,49 @@ fn alive_services(state: State<'_, AppState>) -> Vec<String> {
     state.alive_mru.lock().unwrap().clone()
 }
 
+/// Reload the active service's page (a hung WhatsApp Web tab
+/// otherwise needs a service round-trip to recover).
+#[tauri::command]
+fn reload_service(app: tauri::AppHandle, state: State<'_, AppState>) {
+    let active = state.active.lock().unwrap().clone();
+    if let Some(label) = active {
+        if let Some(wv) = app.get_webview(&label) {
+            let _ = wv.reload();
+        }
+    }
+}
+
+/// Show a downloaded file selected in Explorer.
+#[tauri::command]
+fn reveal_file(path: String) -> Result<(), String> {
+    std::process::Command::new("explorer")
+        .arg(format!("/select,\"{path}\""))
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Read the durable settings file (config.json), if it exists.
+/// The UI keeps its working copy in localStorage, which dies with
+/// the webview profile data; this file survives that.
+#[tauri::command]
+fn load_config(app: tauri::AppHandle) -> Option<String> {
+    let path = app.path().app_data_dir().ok()?.join("config.json");
+    std::fs::read_to_string(path).ok()
+}
+
+/// Write the settings file atomically (temp file + rename), so a
+/// crash mid-write cannot corrupt the only copy.
+#[tauri::command]
+fn save_config(app: tauri::AppHandle, data: String) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let tmp = dir.join("config.json.tmp");
+    std::fs::write(&tmp, data).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, dir.join("config.json")).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -674,6 +823,11 @@ pub fn run() {
             if let Ok(dir) = app.path().download_dir() {
                 *state.download_dir.lock().unwrap() = dir;
             }
+            if build_tray(app.handle()).is_ok() {
+                state
+                    .tray_ok
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            }
             Ok(())
         })
         // Allow notification requests (unanswered, WebView2 denies
@@ -685,6 +839,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             switch_service,
+            start_service_hidden,
             set_services_visible,
             close_service,
             set_pinned,
@@ -693,7 +848,11 @@ pub fn run() {
             open_link_popup,
             close_link_popup,
             open_external,
-            alive_services
+            alive_services,
+            reload_service,
+            reveal_file,
+            load_config,
+            save_config
         ])
         .on_window_event(|window, event| {
             if window.label() != "main" {
@@ -716,8 +875,18 @@ pub fn run() {
                             .global_shortcut()
                             .unregister_multiple(digit_shortcuts());
                     }
-                    WindowEvent::CloseRequested { .. } => {
+                    WindowEvent::CloseRequested { api, .. } => {
                         save_window_state(&window.app_handle(), window);
+                        // With a tray icon, closing hides the window:
+                        // services keep running (and notifying) in
+                        // the background. Real exit is the tray
+                        // menu's "Keluar".
+                        let handle = window.app_handle();
+                        let state = handle.state::<AppState>();
+                        if state.tray_ok.load(std::sync::atomic::Ordering::Relaxed) {
+                            api.prevent_close();
+                            let _ = window.hide();
+                        }
                     }
                     _ => {}
                 }
