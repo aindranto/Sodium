@@ -14,6 +14,8 @@
   </aside>
   <header id="topbar">
     <div id="activeName">Sodium</div>
+    <button id="reloadBtn" class="toolBtn" title="Muat ulang layanan aktif" aria-label="Muat ulang layanan aktif"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button>
+    <span id="dlPill" hidden></span>
     <div id="toast" hidden></div>
     <div class="topTools">
       <div class="zoomCtl" title="Zoom tampilan layanan">
@@ -31,6 +33,8 @@
           <option value="0">∞</option>
         </select>
       </label>
+      <button id="dlBtn" class="toolBtn" title="Riwayat unduhan" aria-label="Riwayat unduhan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m6.5 10.5 5.5 5.5 5.5-5.5"/><path d="M4.5 20h15"/></svg></button>
+      <button id="updateBtn" class="toolBtn wide" title="Periksa update Sodium">Cek update</button>
       <span id="appVersion" class="appVersion"></span>
     </div>
   </header>
@@ -139,6 +143,27 @@
     <div id="manageList" class="manageList"></div>
     <div class="pickerFoot">
       <button id="manageClose" class="btnGhost">Tutup</button>
+    </div>
+  </div>
+
+  <div id="dlPanel" class="picker" hidden>
+    <div class="pickerHead">
+      <h3>Unduhan</h3>
+    </div>
+    <div id="dlList" class="manageList"></div>
+    <div class="pickerFoot">
+      <button id="dlClose" class="btnGhost">Tutup</button>
+    </div>
+  </div>
+
+  <div id="updatePanel" class="picker" hidden>
+    <div class="pickerHead">
+      <h3 id="updateTitle">Update tersedia</h3>
+    </div>
+    <div id="updateBody" class="updateBody"></div>
+    <div class="pickerFoot">
+      <button id="updateLater" class="btnGhost">Nanti saja</button>
+      <button id="updateDownload" class="btnPrimary">Unduh installer</button>
     </div>
   </div>
 
