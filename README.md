@@ -38,6 +38,10 @@ Analisis lengkap mengenai kode sumber Ferdium dan pertimbangan desainnya tersedi
 - **Tarik & letakkan file** langsung ke halaman layanan (misalnya melampirkan file di WhatsApp), sama seperti di browser.
 - **Unduhan**: dialog Simpan Sebagai, indikator unduhan yang sedang berjalan di bar atas, dan panel **riwayat unduhan** dengan tombol buka folder.
 - **Cek update**: tombol di bar atas (ditambah pemeriksaan otomatis sekali sehari) membandingkan versi terpasang dengan rilis terbaru di GitHub; installer versi baru diunduh langsung di dalam Sodium (dengan dialog Simpan Sebagai dan riwayat unduhan), lalu bisa dijalankan dari panel update — Sodium menutup sendiri agar installer menggantikannya.
+- **Kelompok layanan**: beri nama kelompok pada layanan lewat panel Kelola (mis. "Kerja", "Pribadi") — sidebar menampilkan **garis pemisah** antar kelompok agar daftar panjang tetap enak dipindai.
+- **Quick Switcher**: tekan **Alt+Space** untuk membuka panel ganti layanan di tengah layar — ketik nama layanan (atau nama kelompoknya), lalu Enter atau klik untuk langsung pindah. Layanan yang sedang aktif dan yang sedang hidup ikut ditandai.
+- **Mulai kelompok**: klik kanan garis pemisah kelompok di sidebar untuk menghidupkan semua layanan dalam kelompok itu sekaligus (batas *Hidup bareng* tetap berlaku seperti biasa).
+- **Ekspor & impor konfigurasi**: cadangkan daftar layanan, kelompok, pin, zoom, dan pengaturan ke satu file JSON dari panel Kelola, lalu pulihkan di PC lain. Sesi login tidak ikut berpindah — di PC baru, login ulang per layanan.
 - **Penyimpanan awet**: daftar layanan dan pengaturan tersimpan di file `config.json`, sehingga tidak hilang walau data webview terhapus.
 - **Duplikat (akun beda)** melalui panel Kelola layanan: menyalin URL dan ikon dengan profil yang masih kosong, untuk masuk dengan akun lain pada layanan yang sama.
 - **Ganti nama** layanan melalui panel Kelola layanan: nama bebas tanpa memengaruhi sesi masuk, pin, atau zoom (semua terikat pada id layanan, bukan nama). Layanan custom URL tanpa logo katalog mengambil favicon situsnya secara otomatis.
