@@ -15,10 +15,9 @@
   </aside>
   <header id="topbar">
     <div class="topLeft">
-      <div id="activeName">Sodium</div>
       <button id="reloadBtn" class="toolBtn" title="Muat ulang layanan aktif" aria-label="Muat ulang layanan aktif"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button>
+      <div id="activeName">Sodium</div>
     </div>
-    <span id="dlPill" hidden></span>
     <div id="toast" hidden></div>
     <div class="topTools">
       <div class="zoomCtl" title="Zoom tampilan layanan">
@@ -36,6 +35,7 @@
           <option value="0">∞</option>
         </select>
       </label>
+      <span id="dlPill" hidden></span>
       <button id="dlBtn" class="toolBtn" title="Riwayat unduhan" aria-label="Riwayat unduhan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m6.5 10.5 5.5 5.5 5.5-5.5"/><path d="M4.5 20h15"/></svg></button>
       <button id="updateBtn" class="toolBtn wide" title="Periksa update Sodium">Cek update</button>
       <span id="appVersion" class="appVersion"></span>
@@ -140,8 +140,10 @@
   <div id="managePanel" class="picker" hidden>
     <div class="pickerHead">
       <h3>Kelola layanan</h3>
-      <label class="manageToggle"><input type="checkbox" id="showNamesToggle"/> Tampilkan nama di ikon sidebar</label>
-      <label class="manageToggle">Ukuran ikon
+    </div>
+    <div class="mgSettings">
+      <label class="mgSetItem"><span>Tampilkan nama di ikon sidebar</span><input type="checkbox" id="showNamesToggle"/></label>
+      <label class="mgSetItem"><span>Ukuran ikon</span>
         <select id="iconSizeSel" aria-label="Ukuran ikon sidebar">
           <option value="40">Kecil</option>
           <option value="48">Sedang</option>
