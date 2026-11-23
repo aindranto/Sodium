@@ -160,14 +160,15 @@ fn make_download_handler(
     }
 }
 
-/// Ctrl+1..9 as global shortcuts. They are registered only while the
+/// Global shortcuts owned by Sodium: Ctrl+1..9 (switch service) and
+/// Alt+Space (quick switcher). They are registered only while the
 /// Sodium window is focused (and released on blur, so other apps keep
-/// their Ctrl+number keys): keydown events inside a service webview
-/// never reach Sodium's own UI, so without this the number shortcuts
-/// would be dead exactly while the user is chatting.
-fn digit_shortcuts() -> Vec<tauri_plugin_global_shortcut::Shortcut> {
+/// their keys): keydown events inside a service webview never reach
+/// Sodium's own UI, so without this the shortcuts would be dead
+/// exactly while the user is chatting.
+fn focus_shortcuts() -> Vec<tauri_plugin_global_shortcut::Shortcut> {
     use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
-    [
+    let mut list: Vec<Shortcut> = [
         Code::Digit1,
         Code::Digit2,
         Code::Digit3,
@@ -180,7 +181,9 @@ fn digit_shortcuts() -> Vec<tauri_plugin_global_shortcut::Shortcut> {
     ]
     .iter()
     .map(|c| Shortcut::new(Some(Modifiers::CONTROL), *c))
-    .collect()
+    .collect();
+    list.push(Shortcut::new(Some(Modifiers::ALT), Code::Space));
+    list
 }
 
 fn shortcut_index(code: tauri_plugin_global_shortcut::Code) -> Option<usize> {
@@ -708,6 +711,24 @@ fn close_service(app: tauri::AppHandle, state: State<'_, AppState>, id: String) 
     }
 }
 
+/// Destroy one service's webview and forget it, but KEEP its
+/// profile folder (session survives). Used by config import, where
+/// a removed or re-URLed service must stop running without losing
+/// the login it may need again if the config is re-imported.
+#[tauri::command]
+fn close_webview(app: tauri::AppHandle, state: State<'_, AppState>, id: String) {
+    let label = label_for(&id);
+    if let Some(wv) = app.get_webview(&label) {
+        let _ = wv.close();
+    }
+    let _ = app.emit_to(UI_LABEL, "unread-changed", (id.clone(), 0usize));
+    state.alive_mru.lock().unwrap().retain(|l| l != &label);
+    let mut active = state.active.lock().unwrap();
+    if active.as_deref() == Some(label.as_str()) {
+        *active = None;
+    }
+}
+
 #[tauri::command]
 fn set_pinned(app: tauri::AppHandle, state: State<'_, AppState>, id: String, pinned: bool) {
     {
@@ -791,6 +812,35 @@ fn save_config(app: tauri::AppHandle, data: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Export the settings snapshot to a JSON file the user picks.
+/// Returns false when the dialog was cancelled.
+#[tauri::command]
+fn export_config(data: String) -> Result<bool, String> {
+    let Some(path) = rfd::FileDialog::new()
+        .set_file_name("sodium-config.json")
+        .add_filter("JSON", &["json"])
+        .save_file()
+    else {
+        return Ok(false);
+    };
+    std::fs::write(&path, data).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// Import a settings snapshot from a JSON file the user picks.
+/// Returns None when the dialog was cancelled.
+#[tauri::command]
+fn import_config() -> Result<Option<String>, String> {
+    let Some(path) = rfd::FileDialog::new()
+        .add_filter("JSON", &["json"])
+        .pick_file()
+    else {
+        return Ok(None);
+    };
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    Ok(Some(text))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -808,9 +858,11 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
-                    use tauri_plugin_global_shortcut::ShortcutState;
+                    use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
                     if event.state() == ShortcutState::Pressed {
-                        if let Some(idx) = shortcut_index(shortcut.key) {
+                        if shortcut.key == Code::Space && shortcut.mods == Modifiers::ALT {
+                            let _ = app.emit_to(UI_LABEL, "quick-switch", ());
+                        } else if let Some(idx) = shortcut_index(shortcut.key) {
                             let _ = app.emit_to(UI_LABEL, "shortcut-switch", idx);
                         }
                     }
@@ -843,7 +895,7 @@ pub fn run() {
                 let _ = app
                     .handle()
                     .global_shortcut()
-                    .register_multiple(digit_shortcuts());
+                    .register_multiple(focus_shortcuts());
             }
             let size = window.inner_size()?;
             let state = app.state::<AppState>();
@@ -880,6 +932,7 @@ pub fn run() {
             start_service_hidden,
             set_services_visible,
             close_service,
+            close_webview,
             set_pinned,
             set_max_alive,
             set_service_zoom,
@@ -891,7 +944,9 @@ pub fn run() {
             reload_service,
             reveal_file,
             load_config,
-            save_config
+            save_config,
+            export_config,
+            import_config
         ])
         .on_window_event(|window, event| {
             if window.label() != "main" {
@@ -900,19 +955,20 @@ pub fn run() {
             {
                 use tauri_plugin_global_shortcut::GlobalShortcutExt;
                 match event {
-                    // Ctrl+1..9 belong to Sodium only while its window is
-                    // focused; release them when it blurs.
+                    // Ctrl+1..9 and Alt+Space belong to Sodium only
+                    // while its window is focused; release them when
+                    // it blurs.
                     WindowEvent::Focused(true) => {
                         let _ = window
                             .app_handle()
                             .global_shortcut()
-                            .register_multiple(digit_shortcuts());
+                            .register_multiple(focus_shortcuts());
                     }
                     WindowEvent::Focused(false) => {
                         let _ = window
                             .app_handle()
                             .global_shortcut()
-                            .unregister_multiple(digit_shortcuts());
+                            .unregister_multiple(focus_shortcuts());
                     }
                     WindowEvent::CloseRequested { api, .. } => {
                         save_window_state(&window.app_handle(), window);
