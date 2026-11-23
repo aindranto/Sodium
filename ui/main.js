@@ -282,7 +282,7 @@ function render() {
     const n = unread.get(s.id);
     if (n && !disabled.has(s.id)) {
       const bd = document.createElement("span");
-      bd.className = "badge";
+      bd.className = "badge" + (s.id === popId ? " pop" : "");
       bd.textContent = n > 99 ? "99+" : String(n);
       b.appendChild(bd);
     }
@@ -307,7 +307,33 @@ function render() {
     });
     nav.appendChild(b);
   }
+  popId = null;
+  positionPill(false);
 }
+
+// Discord-style active indicator: a small accent pill at the left
+// edge of the rail that slides to the active service icon.
+const pillEl = el("activePill");
+let pillShown = false;
+function positionPill(instant) {
+  const active = nav.querySelector(".svc.active");
+  if (!active) { pillEl.hidden = true; pillShown = false; return; }
+  const sb = el("sidebar").getBoundingClientRect();
+  const r = active.getBoundingClientRect();
+  const y = r.top - sb.top + (r.height - 24) / 2;
+  pillEl.hidden = false;
+  if (instant || !pillShown) {
+    pillEl.style.transition = "none";
+    pillEl.style.transform = "translateY(" + y + "px)";
+    pillEl.getBoundingClientRect();
+    pillEl.style.transition = "";
+  } else {
+    pillEl.style.transform = "translateY(" + y + "px)";
+  }
+  pillShown = true;
+}
+nav.addEventListener("scroll", () => positionPill(true));
+window.addEventListener("resize", () => positionPill(true));
 
 async function switchTo(s) {
   if (disabled.has(s.id)) return;
@@ -1038,9 +1064,12 @@ window.__TAURI__.app.getVersion()
 
 // Unread badge counts from Rust (page-title watcher in each service
 // webview). Re-render the sidebar so the number appears/clears.
+let popId = null;
 window.__TAURI__.event.listen("unread-changed", (e) => {
   const [id, count] = e.payload;
+  const prev = unread.get(id) || 0;
   if (count > 0) unread.set(id, count); else unread.delete(id);
+  if (count > prev) popId = id;
   render();
 });
 
