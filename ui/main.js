@@ -107,6 +107,13 @@ function hostOf(u) {
   try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; }
 }
 
+// A service's group name (free text set in the Kelola panel);
+// "" means ungrouped. Groups only affect sidebar separators,
+// the quick switcher captions and "Mulai kelompok".
+function groupOf(s) {
+  return (s && s.group ? String(s.group) : "").trim();
+}
+
 // One-time migration: services added before v0.2.0 have letter icons and no
 // colour. If their URL matches a catalog entry, adopt its emoji + colour
 // (only when the icon is still the auto-generated 1-2 letters), and adopt
@@ -138,7 +145,9 @@ const iconPanel = el("iconPanel");
 const managePanel = el("managePanel");
 const dlPanel = el("dlPanel");
 const updatePanel = el("updatePanel");
-const allPanels = [pickerPanel, ctxPanel, iconPanel, managePanel, dlPanel, updatePanel];
+const quickPanel = el("quickPanel");
+const groupPanel = el("groupPanel");
+const allPanels = [pickerPanel, ctxPanel, iconPanel, managePanel, dlPanel, updatePanel, quickPanel, groupPanel];
 let ctxService = null;
 let iconTarget = null;
 
@@ -251,7 +260,28 @@ async function openCtx(s) {
 function render() {
   document.body.classList.toggle("showNames", showNames);
   nav.innerHTML = "";
+  let prevGroup = null;
   for (const s of services) {
+    // Group separator: a hairline between two neighbours whose
+    // groups differ (when at least one of them is grouped). The
+    // divider that introduces a named group carries the group:
+    // right-clicking it offers "Mulai kelompok".
+    const g = groupOf(s);
+    if (prevGroup !== null && g !== prevGroup && (g || prevGroup)) {
+      const sep = document.createElement("div");
+      sep.className = "svcSep";
+      if (g) {
+        sep.dataset.group = g;
+        sep.title = "Kelompok " + g;
+        sep.setAttribute("aria-label", sep.title);
+        sep.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          openGroupPanel(g);
+        });
+      }
+      nav.appendChild(sep);
+    }
+    prevGroup = g;
     const b = document.createElement("button");
     b.className = "svc" + (s.id === activeId ? " active" : "") + (disabled.has(s.id) ? " disabled" : "");
     b.title = s.name + (pinned.has(s.id) ? " (pinned - tetap hidup)" : "") + (disabled.has(s.id) ? " (nonaktif, klik untuk mengaktifkan lagi)" : "");
@@ -725,6 +755,14 @@ function mgIconButton(icon, cls, title, onClick) {
 function renderManage() {
   el("showNamesToggle").checked = showNames;
   el("iconSizeSel").value = String(iconSize);
+  // Group name suggestions for the edit forms' Kelompok field.
+  const dl = el("groupNames");
+  dl.innerHTML = "";
+  for (const g of [...new Set(services.map(groupOf).filter(Boolean))].sort()) {
+    const o = document.createElement("option");
+    o.value = g;
+    dl.appendChild(o);
+  }
   manageList.innerHTML = "";
   services.forEach((s, idx) => {
     const row = document.createElement("div");
@@ -801,6 +839,14 @@ function buildManageForm(s) {
   urlIn.value = s.url;
   urlIn.spellcheck = false;
   urlLabel.appendChild(urlIn);
+  const groupLabel = document.createElement("label");
+  groupLabel.textContent = "Kelompok";
+  const groupIn = document.createElement("input");
+  groupIn.value = s.group || "";
+  groupIn.maxLength = 30;
+  groupIn.setAttribute("list", "groupNames");
+  groupIn.placeholder = "mis. Kerja (boleh kosong)";
+  groupLabel.appendChild(groupIn);
   const warn = document.createElement("p");
   warn.className = "mgWarn";
   warn.hidden = true;
@@ -814,7 +860,7 @@ function buildManageForm(s) {
   });
   const grid = document.createElement("div");
   grid.className = "mgFormGrid";
-  grid.append(nameLabel, urlLabel);
+  grid.append(nameLabel, urlLabel, groupLabel);
   const btns = document.createElement("div");
   btns.className = "mgFormBtns";
   const btnsL = document.createElement("div");
@@ -834,7 +880,7 @@ function buildManageForm(s) {
   btnsR.className = "mgFormBtnsSide";
   btnsR.append(
     mgButton("Batal", "btnGhost", () => { manageEditId = null; manageDeleteArmed = null; renderManage(); }),
-    mgButton("Simpan", "btnPrimary", () => saveManageEdit(s, nameIn, urlIn)),
+    mgButton("Simpan", "btnPrimary", () => saveManageEdit(s, nameIn, urlIn, groupIn)),
   );
   btns.append(btnsL, btnsR);
   form.append(grid, warn, btns);
@@ -843,13 +889,15 @@ function buildManageForm(s) {
 
 // The name is a label only (everything is keyed by id). A changed
 // URL closes the webview; a fetched favicon is dropped and refetched.
-async function saveManageEdit(s, nameIn, urlIn) {
+async function saveManageEdit(s, nameIn, urlIn, groupIn) {
   const name = nameIn.value.trim();
   let url = urlIn.value.trim();
   if (!name || !url) return;
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
   const urlChanged = url !== s.url;
   s.name = name;
+  const grp = groupIn.value.trim();
+  if (grp) s.group = grp; else delete s.group;
   if (activeId === s.id) el("activeName").textContent = name;
   manageEditId = null;
   store.save(services);
@@ -1149,9 +1197,249 @@ window.__TAURI__.event.listen("shortcut-switch", (e) => {
   if (s) switchTo(s);
 });
 
+// "Mulai kelompok": right-clicking a named group separator in the
+// sidebar opens this panel; confirming starts every (enabled)
+// member hidden, then switches to the first one. switch_service's
+// own eviction trims the alive set to the "Hidup bareng" limit.
+let groupCtx = null;
+async function openGroupPanel(name) {
+  groupCtx = name;
+  el("groupTitle").textContent = "Kelompok " + name;
+  await openPanel(groupPanel);
+}
+el("groupCancel").addEventListener("click", closePanels);
+el("groupStart").addEventListener("click", async () => {
+  if (!groupCtx) return;
+  const members = services.filter(s => groupOf(s) === groupCtx && !disabled.has(s.id));
+  await closePanels();
+  for (const m of members) {
+    if (m.id === activeId) continue;
+    try { await invoke("start_service_hidden", { id: m.id, url: m.url }); } catch { /* ignore */ }
+  }
+  if (members.length) switchTo(members[0]);
+});
+
+// Quick switcher (Alt+Space, arriving from Rust as a global
+// shortcut while the window is focused): a centred panel listing
+// every service — tile icon, name, group caption, an "Aktif" pill
+// for the current service and an accent dot for services whose
+// webview is alive. Type to filter by name or group; arrows +
+// Enter or a click switch.
+const quickList = el("quickList");
+const quickSearch = el("quickSearch");
+let quickRows = []; // { svc, row } entries currently shown (post-filter)
+let quickSel = 0;
+let quickAlive = new Set();
+
+async function openQuickSwitch() {
+  try {
+    const labels = await invoke("alive_services");
+    quickAlive = new Set(labels.map(l => l.startsWith("service-") ? l.slice("service-".length) : l));
+  } catch { quickAlive = new Set(); }
+  quickSearch.value = "";
+  renderQuickList("");
+  await openPanel(quickPanel);
+  quickSearch.focus();
+}
+
+function renderQuickList(q) {
+  const query = (q || "").trim().toLowerCase();
+  quickList.innerHTML = "";
+  quickRows = [];
+  for (const s of services) {
+    if (query && !s.name.toLowerCase().includes(query) && !groupOf(s).toLowerCase().includes(query)) continue;
+    const row = document.createElement("div");
+    row.className = "qRow" + (disabled.has(s.id) ? " off" : "");
+    const tile = document.createElement("span");
+    tile.className = "tileIcon qTile";
+    if (s.img) {
+      const im = document.createElement("img");
+      im.className = "svcImg"; im.src = s.img; im.alt = "";
+      // Same broken-favicon fallback as the sidebar.
+      im.onerror = () => {
+        im.replaceWith(iconVisual(s, 20));
+        if (s.color) tile.style.background = s.color;
+      };
+      tile.appendChild(im);
+    } else {
+      if (s.color) tile.style.background = s.color;
+      tile.appendChild(iconVisual(s, 20));
+    }
+    const info = document.createElement("div");
+    info.className = "qInfo";
+    const nm = document.createElement("div");
+    nm.className = "qName";
+    nm.textContent = s.name;
+    info.appendChild(nm);
+    const g = groupOf(s);
+    if (g) {
+      const cap = document.createElement("div");
+      cap.className = "qGroup";
+      cap.textContent = g;
+      info.appendChild(cap);
+    }
+    row.append(tile, info);
+    if (quickAlive.has(s.id)) {
+      const dot = document.createElement("span");
+      dot.className = "qAlive";
+      dot.title = "Sedang hidup";
+      row.appendChild(dot);
+    }
+    if (s.id === activeId) {
+      const p = document.createElement("span");
+      p.className = "mgPill pin";
+      p.textContent = "Aktif";
+      row.appendChild(p);
+    }
+    const entry = { svc: s, row };
+    row.addEventListener("click", () => activateQuick(entry));
+    row.addEventListener("mouseenter", () => {
+      const i = quickRows.indexOf(entry);
+      if (i >= 0) { quickSel = i; paintQuickSel(); }
+    });
+    quickRows.push(entry);
+    quickList.appendChild(row);
+  }
+  if (!quickRows.length) {
+    const d = document.createElement("div");
+    d.className = "dlEmpty";
+    d.textContent = "Tidak ada layanan yang cocok.";
+    quickList.appendChild(d);
+  }
+  // Start on the active service when it is in the list.
+  quickSel = Math.max(0, quickRows.findIndex(r => r.svc.id === activeId));
+  paintQuickSel();
+}
+
+function paintQuickSel() {
+  quickRows.forEach((r, i) => {
+    const on = i === quickSel;
+    r.row.classList.toggle("sel", on);
+    if (on) r.row.scrollIntoView({ block: "nearest" });
+  });
+}
+
+async function activateQuick(entry) {
+  if (!entry) return;
+  const s = entry.svc;
+  await closePanels();
+  // Disabled services open their menu instead, like a sidebar click.
+  if (disabled.has(s.id)) { await openCtx(s); return; }
+  switchTo(s);
+}
+
+quickSearch.addEventListener("input", () => renderQuickList(quickSearch.value));
+quickSearch.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (quickSel < quickRows.length - 1) { quickSel++; paintQuickSel(); }
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (quickSel > 0) { quickSel--; paintQuickSel(); }
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    activateQuick(quickRows[quickSel]);
+  }
+});
+
+window.__TAURI__.event.listen("quick-switch", () => { openQuickSwitch(); });
+
+// Export / import the whole configuration (services, groups, pins,
+// zoom, settings) as one JSON file — the same snapshot shape that
+// config.json uses. Login sessions live in the per-service profile
+// folders and deliberately do NOT travel with it.
+el("exportBtn").addEventListener("click", exportConfig);
+el("importBtn").addEventListener("click", importConfig);
+
+async function exportConfig() {
+  const data = {};
+  for (const k of CFG_KEYS) {
+    const v = localStorage.getItem(k);
+    if (v !== null) data[k] = v;
+  }
+  try {
+    const done = await invoke("export_config", { data: JSON.stringify({ rev: cfgRev, data }) });
+    if (done) showToast("Konfigurasi diekspor.");
+  } catch { showToast("Gagal mengekspor konfigurasi."); }
+}
+
+async function importConfig() {
+  let text;
+  try { text = await invoke("import_config"); } catch { return; }
+  if (!text) return; // dialog cancelled
+  let snap;
+  try {
+    snap = JSON.parse(text);
+    if (!snap || !snap.data || !Array.isArray(JSON.parse(snap.data["sodium.services"] || "null"))) {
+      throw new Error("invalid config file");
+    }
+  } catch { showToast("File konfigurasi tidak valid."); return; }
+
+  const oldUrls = new Map(services.map(s => [s.id, s.url]));
+  const oldPinned = new Set(pinned);
+
+  applyingConfig = true;
+  for (const k of CFG_KEYS) {
+    if (k in snap.data) localStorage.setItem(k, snap.data[k]);
+    else localStorage.removeItem(k);
+  }
+  if (typeof snap.rev === "number") cfgRev = snap.rev;
+  localStorage.setItem("sodium.cfgRev", String(cfgRev));
+  applyingConfig = false;
+  scheduleConfigSave();
+
+  // Reload the in-memory state, mirroring applyConfigFromRust().
+  services = store.load();
+  pinned = store.pinned();
+  disabled = store.disabled();
+  showNames = localStorage.getItem("sodium.showNames") === "1";
+  iconSize = parseInt(localStorage.getItem("sodium.iconSize") || "48", 10) || 48;
+  applyIconSize();
+  try { zoomByService = JSON.parse(localStorage.getItem("sodium.zoomByService") || "{}"); } catch { zoomByService = {}; }
+  try { downloads = JSON.parse(localStorage.getItem("sodium.downloads") || "[]"); } catch { downloads = []; }
+  el("showNamesToggle").checked = showNames;
+  el("maxAlive").value = localStorage.getItem("sodium.maxAlive") || "1";
+
+  // Push the restored settings into Rust.
+  invoke("set_max_alive", { max: Number(localStorage.getItem("sodium.maxAlive") || "1") });
+  for (const id of pinned) invoke("set_pinned", { id, pinned: true });
+  for (const id of oldPinned) {
+    if (!pinned.has(id)) invoke("set_pinned", { id, pinned: false });
+  }
+
+  // Webviews of services that vanished or changed URL must stop;
+  // close_webview keeps their profile folders (sessions survive).
+  let activeGone = false;
+  for (const [id, url] of oldUrls) {
+    const now = services.find(s => s.id === id);
+    if (!now || now.url !== url) {
+      await invoke("close_webview", { id });
+      if (activeId === id) activeGone = true;
+    }
+  }
+  if (activeId && !services.some(s => s.id === activeId)) activeGone = true;
+  if (activeGone) {
+    activeId = null;
+    el("activeName").textContent = "Sodium";
+    el("welcome").style.display = "";
+    showZoom();
+  }
+
+  render();
+  renderManage();
+  showToast("Konfigurasi diimpor.");
+}
+
 // Keyboard: Escape closes the link popup or any open panel;
-// Ctrl/Cmd + 1..9 switches services.
+// Ctrl/Cmd + 1..9 switches services; Alt+Space opens the quick
+// switcher (fallback for when focus sits in this UI webview —
+// inside a service webview the Rust global shortcut covers it).
 window.addEventListener("keydown", async (e) => {
+  if (e.altKey && e.code === "Space") {
+    e.preventDefault();
+    openQuickSwitch();
+    return;
+  }
   if (e.key === "Escape") {
     if (linkPopupOpen) { await closeLinkPopup(); return; }
     if (allPanels.some(p => !p.hidden)) { await closePanels(); return; }
