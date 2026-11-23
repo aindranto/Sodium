@@ -37,7 +37,7 @@ Analisis lengkap mengenai kode sumber Ferdium dan pertimbangan desainnya tersedi
 - **Tema Obsidian Na** — tema gelap netral nyaris hitam dengan satu aksen kuning Na, token warna CSS, dan animasi mikro halus (panel membuka lembut, indikator aktif meluncur di sidebar, badge unread memantul saat bertambah). Mati otomatis bila Windows disetel mengurangi animasi.
 - **Tarik & letakkan file** langsung ke halaman layanan (misalnya melampirkan file di WhatsApp), sama seperti di browser.
 - **Unduhan**: dialog Simpan Sebagai, indikator unduhan yang sedang berjalan di bar atas, dan panel **riwayat unduhan** dengan tombol buka folder.
-- **Cek update**: tombol di bar atas (ditambah pemeriksaan otomatis sekali sehari) membandingkan versi terpasang dengan rilis terbaru di GitHub dan mengarahkan ke unduhan installer versi baru.
+- **Cek update**: tombol di bar atas (ditambah pemeriksaan otomatis sekali sehari) membandingkan versi terpasang dengan rilis terbaru di GitHub; installer versi baru diunduh langsung di dalam Sodium (dengan dialog Simpan Sebagai dan riwayat unduhan), lalu bisa dijalankan dari panel update — Sodium menutup sendiri agar installer menggantikannya.
 - **Penyimpanan awet**: daftar layanan dan pengaturan tersimpan di file `config.json`, sehingga tidak hilang walau data webview terhapus.
 - **Duplikat (akun beda)** melalui panel Kelola layanan: menyalin URL dan ikon dengan profil yang masih kosong, untuk masuk dengan akun lain pada layanan yang sama.
 - **Ganti nama** layanan melalui panel Kelola layanan: nama bebas tanpa memengaruhi sesi masuk, pin, atau zoom (semua terikat pada id layanan, bukan nama). Layanan custom URL tanpa logo katalog mengambil favicon situsnya secara otomatis.
