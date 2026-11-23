@@ -71,7 +71,7 @@
         <p>Pesan masuk tampil sebagai notifikasi Windows dari layanannya sendiri, sama seperti saat dibuka di browser.</p>
       </div>
     </div>
-    <p class="muted welcomeHint">Pilih layanan di sidebar untuk memulai · Ctrl+1–9 untuk berpindah cepat · Klik + untuk menambah layanan</p>
+    <p class="muted welcomeHint">Pilih layanan di sidebar untuk memulai · Ctrl+1–9 untuk berpindah cepat · Alt+Space ganti cepat · Klik + untuk menambah layanan</p>
     <p class="muted" id="ramNote"></p>
   </main>
 
@@ -153,6 +153,8 @@
     </div>
     <div id="manageList" class="manageList"></div>
     <div class="pickerFoot">
+      <button id="exportBtn" class="btnGhost">Ekspor</button>
+      <button id="importBtn" class="btnGhost">Impor</button>
       <button id="manageClose" class="btnGhost">Tutup</button>
     </div>
   </div>
@@ -179,6 +181,25 @@
       <button id="updateInstall" class="btnPrimary" hidden>Jalankan installer</button>
     </div>
   </div>
+
+  <div id="quickPanel" class="picker" hidden>
+    <div class="pickerHead">
+      <h3>Ganti layanan</h3>
+      <input id="quickSearch" placeholder="Ketik nama layanan..." aria-label="Cari layanan"/>
+    </div>
+    <div id="quickList"></div>
+  </div>
+
+  <div id="groupPanel" class="picker" hidden>
+    <h3 id="groupTitle">Kelompok</h3>
+    <p class="muted">Hidupkan semua layanan dalam kelompok ini sekaligus. Batas "Hidup bareng" tetap berlaku seperti biasa.</p>
+    <div class="pickerFoot">
+      <button id="groupCancel" class="btnGhost">Batal</button>
+      <button id="groupStart" class="btnPrimary">Mulai semua</button>
+    </div>
+  </div>
+
+  <datalist id="groupNames"></datalist>
 
 <script src="icons.js"></script>
 <script src="main.js"></script>
