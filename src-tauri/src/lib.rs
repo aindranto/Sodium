@@ -647,6 +647,31 @@ fn open_external(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Launch a downloaded Sodium installer, then exit so the installer
+/// can replace the running app. Only existing .exe files are
+/// accepted; the path comes from the app's own download history,
+/// never from free-form input.
+#[tauri::command]
+fn run_installer(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+    let is_exe = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("exe"))
+        .unwrap_or(false);
+    if !is_exe || !p.is_file() {
+        return Err("installer file not found".into());
+    }
+    if let Some(window) = app.get_window("main") {
+        save_window_state(&app, &window);
+    }
+    std::process::Command::new(&p)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    app.exit(0);
+    Ok(())
+}
+
 /// Destroy one service's webview and forget it (used when the user
 /// deletes the service from the sidebar).
 #[tauri::command]
@@ -821,9 +846,17 @@ pub fn run() {
                     .register_multiple(digit_shortcuts());
             }
             let size = window.inner_size()?;
-            let ui_builder = WebviewBuilder::new(UI_LABEL, WebviewUrl::App("index.html".into()));
-            window.add_child(ui_builder, LogicalPosition::new(0.0, 0.0), size)?;
             let state = app.state::<AppState>();
+            // The UI webview gets the download handler too (source
+            // "sodium-update") so update installers download inside
+            // Sodium instead of opening the system browser.
+            let ui_builder = WebviewBuilder::new(UI_LABEL, WebviewUrl::App("index.html".into()))
+                .on_download(make_download_handler(
+                    app.handle().clone(),
+                    state.download_dir.clone(),
+                    "sodium-update".to_string(),
+                ));
+            window.add_child(ui_builder, LogicalPosition::new(0.0, 0.0), size)?;
             *state.main_window.lock().unwrap() = Some(window);
             if let Ok(dir) = app.path().download_dir() {
                 *state.download_dir.lock().unwrap() = dir;
@@ -853,6 +886,7 @@ pub fn run() {
             open_link_popup,
             close_link_popup,
             open_external,
+            run_installer,
             alive_services,
             reload_service,
             reveal_file,
