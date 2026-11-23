@@ -966,6 +966,7 @@ function showToast(text, title) {
 let downloads = [];
 try { downloads = JSON.parse(localStorage.getItem("sodium.downloads") || "[]"); } catch { downloads = []; }
 let activeDownloads = 0;
+let installerPath = ""; // set when an update installer finishes downloading
 
 function saveDownloads() {
   localStorage.setItem("sodium.downloads", JSON.stringify(downloads.slice(0, 50)));
@@ -974,6 +975,7 @@ function saveDownloads() {
 
 function sourceName(sourceId) {
   if (sourceId === "link-popup") return "Popup link";
+  if (sourceId === "sodium-update") return "Update Sodium";
   const s = services.find(x => x.id === sourceId);
   return s ? s.name : sourceId;
 }
@@ -993,6 +995,7 @@ window.__TAURI__.event.listen("download-finished", (e) => {
     const name = String(path).split(/[\\/]/).pop();
     downloads.unshift({ name, path: String(path), source: sourceId || "", time: Date.now() });
     saveDownloads();
+    if (sourceId === "sodium-update") { installerPath = String(path); refreshUpdateButtons(); }
     showToast("Tersimpan: " + path, path);
     if (!dlPanel.hidden) renderDownloads();
   } else if (!success) {
@@ -1037,10 +1040,17 @@ el("dlClose").addEventListener("click", closePanels);
 el("reloadBtn").addEventListener("click", () => { invoke("reload_service").catch(() => {}); });
 
 // Update check against the public GitHub repo: the latest release
-// is compared with the running version; the installer asset is
-// opened in the browser, where the download happens.
+// is compared with the running version. The installer downloads
+// inside Sodium (the UI webview has the same download handler as
+// the service webviews); once it lands, the panel offers to run it.
 let appVer = "";
 let updateAssetUrl = "";
+let pendingLatest = "";
+function refreshUpdateButtons() {
+  const ready = !!installerPath;
+  el("updateInstall").hidden = !ready;
+  el("updateDownload").hidden = ready;
+}
 function versionNewer(latest, current) {
   const a = String(latest).split(".").map(n => parseInt(n, 10) || 0);
   const b = String(current).split(".").map(n => parseInt(n, 10) || 0);
@@ -1065,6 +1075,14 @@ async function checkUpdate(manual) {
     }
     const asset = (rel.assets || []).find(a => /setup\.exe$/i.test(a.name)) || (rel.assets || [])[0];
     updateAssetUrl = asset ? asset.browser_download_url : rel.html_url;
+    pendingLatest = latest;
+    // An installer for this exact version may already sit in the
+    // download history (e.g. downloaded in a previous session).
+    if (!installerPath) {
+      const d = downloads.find(x => x.source === "sodium-update" && x.name.includes(latest));
+      if (d) installerPath = d.path;
+    }
+    refreshUpdateButtons();
     el("updateTitle").textContent = "Sodium v" + latest + " tersedia";
     el("updateBody").textContent = (rel.body || "").trim() || "Catatan rilis tidak tersedia.";
     openPanel(updatePanel);
@@ -1082,9 +1100,29 @@ function scheduleDailyUpdateCheck() {
 
 el("updateBtn").addEventListener("click", () => checkUpdate(true));
 el("updateLater").addEventListener("click", closePanels);
-el("updateDownload").addEventListener("click", () => {
+el("updateBrowser").addEventListener("click", () => {
   if (updateAssetUrl) invoke("open_external", { url: updateAssetUrl }).catch(() => {});
   closePanels();
+});
+el("updateDownload").addEventListener("click", () => {
+  if (!updateAssetUrl) return;
+  // Anchor navigation to the asset: GitHub serves it as an
+  // attachment, so the UI webview's download handler takes over
+  // (Save As dialog, progress pill, history) instead of navigating.
+  const a = document.createElement("a");
+  a.href = updateAssetUrl;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  closePanels();
+});
+el("updateInstall").addEventListener("click", async () => {
+  if (!installerPath) return;
+  try {
+    await invoke("run_installer", { path: installerPath });
+  } catch {
+    showToast("Gagal menjalankan installer — buka dari riwayat unduhan.");
+  }
 });
 
 // Read the version from the app so it cannot go stale.
