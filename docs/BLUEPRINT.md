@@ -40,3 +40,11 @@ Angka layanan aktif per halaman adalah sifat web app-nya sendiri (WhatsApp Web d
 2. Webview per layanan dengan data-directory terpisah, destroy-on-switch
 3. Pin service, tray, shortcut, persist sesi
 4. Build installer Windows (.msi/.exe) — verifikasi ukuran + ukur RAM dengan layanan nyata Agung
+
+## Versioning (aturan sejak 23 Nov 2026, keputusan Agung)
+
+- **Patch (0.6.x)** — perbaikan, poles UI, penyempurnaan fitur yang
+  sudah ada. Mayoritas rilis di sini.
+- **Minor (0.x.0)** — hanya untuk kemampuan yang benar-benar baru.
+- **1.0** — keputusan sadar Agung bahwa Sodium matang untuk publik,
+  bukan hasil kehabisan angka.
