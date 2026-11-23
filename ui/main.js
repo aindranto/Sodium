@@ -704,6 +704,24 @@ function mgButton(text, cls, onClick) {
   return b;
 }
 
+const MG_ICONS = {
+  up: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+  down: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+  edit: '<path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+  pin: '<path d="M9 4h6v6l3 4H6l3-4z"/><path d="M12 14v7"/>',
+  power: '<path d="M12 3v8"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/>',
+};
+function mgIconButton(icon, cls, title, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "mgAct " + cls;
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  b.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + MG_ICONS[icon] + "</svg>";
+  b.addEventListener("click", onClick);
+  return b;
+}
+
 function renderManage() {
   el("showNamesToggle").checked = showNames;
   el("iconSizeSel").value = String(iconSize);
@@ -729,35 +747,29 @@ function renderManage() {
     const sub = document.createElement("div");
     sub.className = "mgSub"; sub.textContent = s.url; sub.title = s.url;
     info.append(nm, sub);
-    const status = [pinned.has(s.id) ? "Pin" : "", disabled.has(s.id) ? "Nonaktif" : ""].filter(Boolean).join(" · ");
-    if (status) {
-      const st = document.createElement("div");
-      st.className = "mgStatus"; st.textContent = status;
-      info.appendChild(st);
+    const slot = document.createElement("div");
+    slot.className = "mgStatusSlot";
+    if (pinned.has(s.id)) {
+      const p = document.createElement("span");
+      p.className = "mgPill pin"; p.textContent = "Dipin";
+      slot.appendChild(p);
     }
-    const btns = document.createElement("div");
-    btns.className = "mgBtns";
-    const up = mgButton("↑", "btnGhost", () => moveService(idx, -1));
+    if (disabled.has(s.id)) {
+      const p = document.createElement("span");
+      p.className = "mgPill"; p.textContent = "Nonaktif";
+      slot.appendChild(p);
+    }
+    const acts = document.createElement("div");
+    acts.className = "mgActs";
+    const up = mgIconButton("up", "", "Pindah ke atas", () => moveService(idx, -1));
     up.disabled = idx === 0;
-    up.title = "Pindah ke atas";
-    const down = mgButton("↓", "btnGhost", () => moveService(idx, 1));
+    const down = mgIconButton("down", "", "Pindah ke bawah", () => moveService(idx, 1));
     down.disabled = idx === services.length - 1;
-    down.title = "Pindah ke bawah";
-    btns.append(
-      up, down,
-      mgButton("Edit", "btnGhost", () => { manageEditId = manageEditId === s.id ? null : s.id; manageDeleteArmed = null; renderManage(); }),
-      mgButton(pinned.has(s.id) ? "Unpin" : "Pin", "btnGhost", () => { togglePin(s); renderManage(); }),
-      mgButton(disabled.has(s.id) ? "Aktifkan" : "Nonaktif", "btnGhost", async () => { await setServiceDisabled(s, !disabled.has(s.id)); renderManage(); }),
-      mgButton("Duplikat", "btnGhost", () => { duplicateService(s); renderManage(); }),
-      mgButton(manageDeleteArmed === s.id ? "Yakin hapus?" : "Hapus", "btnDanger", async () => {
-        if (manageDeleteArmed !== s.id) { manageDeleteArmed = s.id; renderManage(); return; }
-        manageDeleteArmed = null;
-        if (manageEditId === s.id) manageEditId = null;
-        await deleteService(s.id);
-        renderManage();
-      }),
-    );
-    row.append(ic, info, btns);
+    const ed = mgIconButton("edit", manageEditId === s.id ? "on" : "", "Edit layanan", () => { manageEditId = manageEditId === s.id ? null : s.id; manageDeleteArmed = null; renderManage(); });
+    const pn = mgIconButton("pin", pinned.has(s.id) ? "on" : "", pinned.has(s.id) ? "Lepas pin" : "Pin (tetap hidup)", () => { togglePin(s); renderManage(); });
+    const pw = mgIconButton("power", disabled.has(s.id) ? "warn on" : "", disabled.has(s.id) ? "Aktifkan lagi" : "Nonaktifkan sementara", async () => { await setServiceDisabled(s, !disabled.has(s.id)); renderManage(); });
+    acts.append(up, down, ed, pn, pw);
+    row.append(ic, info, slot, acts);
     if (manageEditId === s.id) row.appendChild(buildManageForm(s));
     manageList.appendChild(row);
   });
@@ -800,14 +812,32 @@ function buildManageForm(s) {
       warn.textContent = "Host berubah (" + oldHost + " → " + nh + "): webview layanan ditutup dan dibuka ulang pakai alamat baru. Sesi login lama tetap tersimpan di profil layanan ini.";
     }
   });
+  const grid = document.createElement("div");
+  grid.className = "mgFormGrid";
+  grid.append(nameLabel, urlLabel);
   const btns = document.createElement("div");
   btns.className = "mgFormBtns";
-  btns.append(
+  const btnsL = document.createElement("div");
+  btnsL.className = "mgFormBtnsSide";
+  btnsL.append(
     mgButton("Ganti ikon", "btnGhost", () => openIconPanel(s)),
-    mgButton("Batal", "btnGhost", () => { manageEditId = null; renderManage(); }),
+    mgButton("Duplikat", "btnGhost", () => { duplicateService(s); renderManage(); }),
+    mgButton(manageDeleteArmed === s.id ? "Yakin hapus?" : "Hapus", "btnDanger", async () => {
+      if (manageDeleteArmed !== s.id) { manageDeleteArmed = s.id; renderManage(); return; }
+      manageDeleteArmed = null;
+      manageEditId = null;
+      await deleteService(s.id);
+      renderManage();
+    }),
+  );
+  const btnsR = document.createElement("div");
+  btnsR.className = "mgFormBtnsSide";
+  btnsR.append(
+    mgButton("Batal", "btnGhost", () => { manageEditId = null; manageDeleteArmed = null; renderManage(); }),
     mgButton("Simpan", "btnPrimary", () => saveManageEdit(s, nameIn, urlIn)),
   );
-  form.append(nameLabel, urlLabel, warn, btns);
+  btns.append(btnsL, btnsR);
+  form.append(grid, warn, btns);
   return form;
 }
 
