@@ -31,12 +31,13 @@ const CATALOG = [
   { id: "shopee",    name: "Shopee",          url: "https://shopee.co.id/",            icon: "🛍️", color: "#ee4d2d" , slug: "shopee" },
 ];
 
-const ICON_PALETTE = ["💬","✈️","📸","🎮","✉️","🎵","📺","👍","🎧","🐙","💼","🤖","📌","🎬","🛍️","🛒","❤️","🔥","✅","📅","👥","🌐","💡","📰"];
 
 const DEFAULT_SERVICES = [
   // WhatsApp is pre-added; everything else comes from the picker.
   { id: "whatsapp", name: "WhatsApp", url: "https://web.whatsapp.com/", icon: "💬", color: "#1faa55", brand: "whatsapp", iconColor: "#ffffff" },
 ];
+
+const ICON_PALETTE = ["💬","✈️","📸","🎮","✉️","🎵","📺","👍","🎧","🐙","💼","🤖","📌","🎬","🛍️","🛒","❤️","🔥","✅","📅","👥","🌐","💡","📰"];
 
 const store = {
   load() {
@@ -60,7 +61,7 @@ const store = {
 // side: localStorage is the working copy, but it dies with the
 // webview profile data; config.json survives that. Saves are
 // debounced and revisioned; at startup a newer config.json wins.
-const CFG_KEYS = ["sodium.services", "sodium.pinned", "sodium.disabled", "sodium.showNames", "sodium.lastActive", "sodium.onboarded", "sodium.zoom", "sodium.zoomByService", "sodium.maxAlive", "sodium.downloads", "sodium.lastUpdateCheck"];
+const CFG_KEYS = ["sodium.services", "sodium.pinned", "sodium.disabled", "sodium.showNames", "sodium.lastActive", "sodium.onboarded", "sodium.zoom", "sodium.zoomByService", "sodium.maxAlive", "sodium.downloads", "sodium.lastUpdateCheck", "sodium.iconSize"];
 let cfgRev = parseInt(localStorage.getItem("sodium.cfgRev") || "0", 10) || 0;
 let cfgTimer = null;
 let applyingConfig = false;
@@ -88,6 +89,15 @@ let pinned = store.pinned();
 let disabled = store.disabled();
 let activeId = null;
 let showNames = localStorage.getItem("sodium.showNames") === "1";
+// Sidebar icon size (40/48/56 px button): a CSS variable the
+// stylesheet reads, so low-resolution screens can shrink the icons.
+let iconSize = parseInt(localStorage.getItem("sodium.iconSize") || "48", 10) || 48;
+function applyIconSize() {
+  document.documentElement.style.setProperty("--svc", iconSize + "px");
+  document.documentElement.style.setProperty("--svc-sm", Math.round(iconSize * 28 / 48) + "px");
+}
+function svcGlyphPx() { return Math.round(iconSize * 26 / 48); }
+applyIconSize();
 
 const nav = document.getElementById("services");
 const { invoke } = window.__TAURI__.core;
@@ -252,12 +262,12 @@ function render() {
       // A remote favicon URL can fail to load (offline, site gone):
       // fall back to the text/brand icon instead of a broken image.
       im.onerror = () => {
-        im.replaceWith(iconVisual(s, 26));
+        im.replaceWith(iconVisual(s, svcGlyphPx()));
         if (s.color) b.style.background = s.color;
       };
       b.appendChild(im);
     } else {
-      b.appendChild(iconVisual(s, 26));
+      b.appendChild(iconVisual(s, svcGlyphPx()));
       if (s.color) b.style.background = s.color;
     }
     if (pinned.has(s.id)) {
@@ -592,9 +602,9 @@ function refreshIconPanelImg() {
   if (has) el("iconPreview").src = iconTarget.img;
 }
 
-// Tile / logo colours. The emoji palette and uploads apply at once
-// (existing behaviour); colours are a draft with a live preview and
-// only land when Simpan is clicked.
+// Tile / logo colours and the custom icon text are a draft with a
+// live preview and only land when Simpan is clicked; uploads apply
+// at once (existing behaviour).
 const COLOR_SWATCHES = ["#ffffff", "#e8eaf0", "#9aa3b5", "#14161a", "#f5c518", "#1faa55", "#229ed9", "#1877f2", "#5865f2", "#c13584", "#e60023", "#ee4d2d", "#ff4500", "#42b549", "#611f69", "#b20710"];
 let iconDraft = { color: "#262a33", iconColor: "#ffffff" };
 
@@ -652,6 +662,12 @@ el("showNamesToggle").addEventListener("change", () => {
   localStorage.setItem("sodium.showNames", showNames ? "1" : "0"); scheduleConfigSave();
   render();
 });
+el("iconSizeSel").addEventListener("change", () => {
+  iconSize = Number(el("iconSizeSel").value) || 48;
+  localStorage.setItem("sodium.iconSize", String(iconSize)); scheduleConfigSave();
+  applyIconSize();
+  render();
+});
 
 function mgButton(text, cls, onClick) {
   const b = document.createElement("button");
@@ -664,6 +680,7 @@ function mgButton(text, cls, onClick) {
 
 function renderManage() {
   el("showNamesToggle").checked = showNames;
+  el("iconSizeSel").value = String(iconSize);
   manageList.innerHTML = "";
   services.forEach((s, idx) => {
     const row = document.createElement("div");
@@ -798,14 +815,6 @@ async function saveManageEdit(s, nameIn, urlIn) {
   }
 }
 
-buildPalette(el("iconPalette"), async (e) => {
-  if (!iconTarget) return;
-  iconTarget.icon = e;
-  delete iconTarget.img;
-  delete iconTarget.favicon;
-  store.save(services); render();
-  await closePanels();
-});
 el("iconSave").addEventListener("click", async () => {
   if (!iconTarget) return;
   const v = el("iconText").value.trim();
@@ -1156,6 +1165,8 @@ async function applyConfigFromRust() {
     pinned = store.pinned();
     disabled = store.disabled();
     showNames = localStorage.getItem("sodium.showNames") === "1";
+    iconSize = parseInt(localStorage.getItem("sodium.iconSize") || "48", 10) || 48;
+    applyIconSize();
     try { zoomByService = JSON.parse(localStorage.getItem("sodium.zoomByService") || "{}"); } catch { zoomByService = {}; }
     el("showNamesToggle").checked = showNames;
   } catch { applyingConfig = false; }
