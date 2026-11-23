@@ -8,13 +8,16 @@
 </head>
 <body>
   <aside id="sidebar">
+    <div id="activePill" hidden></div>
     <nav id="services"></nav>
     <button id="addBtn" title="Tambah layanan" aria-label="Tambah layanan">+</button>
     <button id="manageBtn" title="Kelola layanan" aria-label="Kelola layanan"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M19 7h1M4 12h3M13 12h7M4 17h11M19 17h1"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="12" r="2.2"/><circle cx="17.5" cy="17" r="2.2"/></svg></button>
   </aside>
   <header id="topbar">
-    <div id="activeName">Sodium</div>
-    <button id="reloadBtn" class="toolBtn" title="Muat ulang layanan aktif" aria-label="Muat ulang layanan aktif"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button>
+    <div class="topLeft">
+      <div id="activeName">Sodium</div>
+      <button id="reloadBtn" class="toolBtn" title="Muat ulang layanan aktif" aria-label="Muat ulang layanan aktif"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button>
+    </div>
     <span id="dlPill" hidden></span>
     <div id="toast" hidden></div>
     <div class="topTools">
