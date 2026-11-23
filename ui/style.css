@@ -33,23 +33,34 @@ body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--
 body.showNames .svc{height:calc(var(--svc) + 14px)}
 body.showNames .svc .svgIcon,body.showNames .svc .txtIcon{width:var(--svc-sm);height:var(--svc-sm);flex:none}
 body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8px;flex:none}
-.manageToggle{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer}
-.manageList{overflow-y:auto;margin:16px 0;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding-right:4px}
-.mgRow{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;background:var(--raised);border:1px solid var(--border-strong);border-radius:12px;padding:10px}
+.mgSettings{display:flex;flex-wrap:wrap;gap:8px 24px;padding:12px 0;border-bottom:1px solid var(--border);margin-bottom:12px}
+.mgSetItem{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer}
+.mgSetItem select{background:var(--raised);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;padding:4px 6px;font-size:12px}
+.manageList{overflow-y:auto;margin:0 0 16px;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding-right:4px}
+.mgRow{display:grid;grid-template-columns:36px 1fr 76px auto;gap:12px;align-items:center;background:var(--raised);border:1px solid var(--border-strong);border-radius:12px;padding:10px 12px}
 .mgRow.off{opacity:.6}
-.mgIcon{width:40px;height:40px;border-radius:10px;flex:none}
-.mgInfo{flex:1;min-width:120px}
+.tileIcon.mgIcon{width:36px;height:36px;border-radius:10px;font-size:19px;flex:none}
+.mgInfo{flex:1;min-width:0}
 .mgName{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mgSub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mgStatus{font-size:11px;color:var(--accent);margin-top:2px}
-.mgBtns{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-width:240px}
-.mgBtns button{padding:5px 8px;font-size:11px;border-radius:7px;border:0;font-weight:600;cursor:pointer}
-.mgBtns button[disabled]{opacity:.35;cursor:default}
-.mgForm{flex:1 1 100%;border-top:1px solid var(--border-strong);padding-top:6px}
-.mgForm label{display:block;font-size:12px;color:var(--muted);margin:8px 0 0}
+.mgStatusSlot{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.mgPill{font-size:10px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid var(--border-strong);color:var(--muted);white-space:nowrap}
+.mgPill.pin{background:var(--accent-dim);border-color:transparent;color:var(--accent)}
+.mgActs{display:flex;gap:4px}
+.mgAct{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;padding:0}
+.mgAct:hover{background:var(--hover);color:var(--text)}
+.mgAct[disabled]{opacity:.3;cursor:default}
+.mgAct[disabled]:hover{background:transparent;color:var(--muted)}
+.mgAct.on{background:var(--accent-dim);color:var(--accent)}
+.mgAct.warn.on{background:var(--danger-bg);color:var(--danger-text)}
+.mgForm{grid-column:1/-1;border-top:1px solid var(--border-strong);padding-top:10px;margin-top:2px}
+.mgFormGrid{display:grid;grid-template-columns:minmax(130px,1fr) minmax(190px,1.6fr);gap:12px}
+@media (max-width:580px){.mgFormGrid{grid-template-columns:1fr}}
+.mgForm label{display:block;font-size:12px;color:var(--muted);margin:0}
 .mgForm input{display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text)}
 .mgWarn{font-size:12px;color:var(--danger-text);line-height:1.45;margin:8px 0 0}
-.mgFormBtns{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.mgFormBtns{display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap}
+.mgFormBtnsSide{display:flex;gap:8px;flex-wrap:wrap}
 .mgFormBtns button{padding:7px 12px;border-radius:8px;border:0;font-weight:600;cursor:pointer;font-size:12px}
 #topbar{position:fixed;left:76px;top:0;right:0;height:44px;background:var(--chrome);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:flex-start;gap:12px;padding:0 14px;z-index:9}
 .topLeft{display:flex;align-items:center;gap:8px;min-width:0}
@@ -59,7 +70,7 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:5px;border:2px solid var(--bg)}
 ::-webkit-scrollbar-track{background:transparent}
-.topTools{display:flex;align-items:center;gap:16px}
+.topTools{display:flex;align-items:center;gap:16px;margin-left:auto}
 .zoomCtl{display:flex;align-items:center;gap:4px}
 .zoomCtl button{background:var(--raised);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;min-width:30px;height:28px;font-weight:600;cursor:pointer}
 .zoomCtl button:hover{background:var(--hover)}
@@ -71,13 +82,14 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .linkBtns{display:flex;gap:6px}
 .linkBtns button{background:var(--raised);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer}
 .linkBtns button:hover{background:var(--hover)}
-#toast{flex:1;margin:0 16px;max-width:520px;background:var(--raised);border:1px solid var(--border-strong);border-radius:99px;padding:4px 14px;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+#toast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,42vw);background:var(--raised);border:1px solid var(--border-strong);border-radius:99px;padding:4px 14px;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
 #toast[hidden]{display:none}
-#toast:not([hidden]){animation:dropIn .15s ease-out}
+#toast:not([hidden]){animation:toastIn .15s ease-out}
+@keyframes toastIn{from{opacity:0;transform:translate(-50%,-50%) translateY(-4px)}to{opacity:1;transform:translate(-50%,-50%) translateY(0)}}
 .toolBtn{display:flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 6px;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--muted);cursor:pointer}
 .toolBtn:hover{background:var(--raised);color:var(--text)}
 .toolBtn.wide{font-size:12px;padding:0 10px}
-#dlPill{margin-left:10px;background:var(--raised);border:1px solid var(--accent);border-radius:99px;padding:3px 12px;font-size:12px;color:var(--accent);white-space:nowrap}
+#dlPill{background:var(--raised);border:1px solid var(--accent);border-radius:99px;padding:3px 12px;font-size:12px;color:var(--accent);white-space:nowrap}
 #dlPill[hidden]{display:none}
 #dlPill:not([hidden]){animation:dropIn .15s ease-out}
 @keyframes dropIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
@@ -172,6 +184,6 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .colorRow{margin-top:12px;font-size:13px;color:var(--muted)}
 #iconCombo{margin-top:6px}
 
-.svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgBtns button,.mgFormBtns button,.zoomCtl button,.linkBtns button,#addBtn,#manageBtn,.swatch,.palette button,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
-.svc:active,.tile:active,.toolBtn:active,#addBtn:active,#manageBtn:active,.zoomCtl button:active,.linkBtns button:active,.panel button:active,.pickerFoot button:active,.mgBtns button:active,.customRow button:active{transform:scale(.98)}
+.svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgAct,.mgFormBtns button,.zoomCtl button,.linkBtns button,#addBtn,#manageBtn,.swatch,.palette button,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
+.svc:active,.tile:active,.toolBtn:active,#addBtn:active,#manageBtn:active,.zoomCtl button:active,.linkBtns button:active,.panel button:active,.pickerFoot button:active,.mgAct:active,.mgFormBtns button:active,.customRow button:active{transform:scale(.98)}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
