@@ -99,7 +99,6 @@
 
   <div id="iconPanel" class="panel" hidden>
     <h3 id="iconTitle">Ganti ikon</h3>
-    <div id="iconPalette" class="palette"></div>
     <label>Ikon sendiri (emoji / 1-2 huruf) <input id="iconText" maxlength="8" placeholder="mis. 💬"/></label>
     <div class="colorRow">
       <span>Warna tile</span>
@@ -139,6 +138,13 @@
     <div class="pickerHead">
       <h3>Kelola layanan</h3>
       <label class="manageToggle"><input type="checkbox" id="showNamesToggle"/> Tampilkan nama di ikon sidebar</label>
+      <label class="manageToggle">Ukuran ikon
+        <select id="iconSizeSel" aria-label="Ukuran ikon sidebar">
+          <option value="40">Kecil</option>
+          <option value="48">Sedang</option>
+          <option value="56">Besar</option>
+        </select>
+      </label>
     </div>
     <div id="manageList" class="manageList"></div>
     <div class="pickerFoot">
