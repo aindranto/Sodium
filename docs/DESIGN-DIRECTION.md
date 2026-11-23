@@ -144,3 +144,52 @@ Isi paket:
 - Font sistem — tidak ada unduhan font.
 - Warna tile/logo per layanan yang dipilih pengguna — token baru
   hanya mengatur chrome aplikasi, bukan konten pilihan pengguna.
+
+## Panel Kelola v2 — baris seragam (usulan v0.6.1)
+
+Layout lama: 8 tombol teks lebar beda-beda membungkus tak rata,
+tinggi baris tak konsisten. Layout baru hanya mengganti lapisan
+presentasi (markup renderManageList + CSS); semua logika
+(pin, nonaktif, duplikat, hapus dua langkah, naik/turun, simpan
+edit + ganti URL) tidak berubah.
+
+- **Kerangka panel tetap**: `.picker` lebar maks 620px, tinggi
+  dibatasi + daftar scroll internal; header & footer tak ikut
+  scroll.
+- **Baris = grid slot tetap**: `[ikon 36px] [info 1fr]
+  [status 72px rata kanan] [aksi 5×28px]`, padding 10×12,
+  tinggi seragam ±56px, gap 12. Nama 13/600 ellipsis; sub-baris
+  URL 11 redup ellipsis.
+- **Status jadi kolom sendiri**: pil kecil — "Dipin" (aksen
+  samar), "Nonaktif" (samar); slot selalu dirender (boleh
+  kosong) agar kolom tetap lurus.
+- **Aksi = tombol ikon 28×28** di slot tetap kanan: ↑ ↓ ✎ 📌 ⏻
+  (pin menyala aksen saat ter-pin; ↑/↓ nonaktif di ujung daftar).
+  Bukan tombol teks lagi. Reorder seret (drag handle) BUKAN
+  target versi ini.
+- **Duplikat & Hapus pindah ke footer form edit**: form
+  akordeon tetap melebar penuh di bawah baris; footer form:
+  kiri [Ganti ikon] [Duplikat] [Hapus], kanan [Batal] [Simpan].
+  Field Nama & URL berdampingan di panel lebar, menumpuk di
+  panel sempit (flex-wrap bermeter minimum).
+- **Baris pengaturan panel** (saklar nama + ukuran ikon): satu
+  baris rapi di bawah header — label kiri, kontrol kanan,
+  pemisah hairline.
+
+### Gerbang fit HD–4K (syarat tetap Agung, 23 Nov 2026)
+
+Semua UI Sodium harus utuh dari layar resolusi rendah sampai
+4K, scaling Windows 100–200%: tidak ada elemen kepotong/hilang.
+Untuk panel ini berarti, by construction:
+
+- Panel tidak pernah lebih tinggi/lebar dari viewport
+  (rumus min() yang sudah ada dipertahankan).
+- Daftar layanan yang scroll hanya `.manageList`
+  (flex:1, min-height:0); header, baris pengaturan, dan footer
+  selalu terlihat.
+- Tidak ada baris yang meluber horizontal: semua teks ellipsis,
+  semua slot berukuran tetap atau menyusut terkendali.
+- Matriks cek saat menilai hasil: 1366×768, 1920×1080,
+  2560×1440, 3840×2160 (100% & 200%), jendela 900×600 dan
+  760×500. Verifikasi konstruksi dari kode oleh Vega; vonis
+  akhir tetap tes visual Agung di perangkatnya.
