@@ -297,6 +297,10 @@ fn create_service_webview(
     let id_for_title = id.to_string();
     let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
         .data_directory(data_dir)
+        // Tauri's own drop handler replaces WebView2's on Windows,
+        // so dropped files would never reach the page (no attaching
+        // files in WhatsApp). Disabling it lets the page handle drops.
+        .disable_drag_drop_handler()
         .on_new_window(move |u, _features| {
             let _ = app_for_links.emit_to(UI_LABEL, "link-clicked", u.to_string());
             NewWindowResponse::Deny
@@ -595,6 +599,7 @@ async fn open_link_popup(
         let app_for_links = app.clone();
         let builder = WebviewBuilder::new(POPUP_LABEL, WebviewUrl::External(parsed))
             .data_directory(data_dir)
+            .disable_drag_drop_handler()
             .on_new_window(move |u, _features| {
                 let _ = app_for_links.emit_to(UI_LABEL, "link-clicked", u.to_string());
                 NewWindowResponse::Deny
