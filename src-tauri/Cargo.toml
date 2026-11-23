@@ -1,6 +1,6 @@
 [package]
 name = "sodium"
-version = "0.6.1"
+version = "0.6.2"
 description = "Sodium - lightweight social aggregator inspired by Ferdium"
 authors = ["Agung Indra Oktoverianto"]
 edition = "2021"
