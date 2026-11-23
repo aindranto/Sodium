@@ -43,18 +43,41 @@ const store = {
     try { return JSON.parse(localStorage.getItem("sodium.services")) || structuredClone(DEFAULT_SERVICES); }
     catch { return structuredClone(DEFAULT_SERVICES); }
   },
-  save(list) { localStorage.setItem("sodium.services", JSON.stringify(list)); },
+  save(list) { localStorage.setItem("sodium.services", JSON.stringify(list)); scheduleConfigSave(); },
   pinned() {
     try { return new Set(JSON.parse(localStorage.getItem("sodium.pinned") || "[]")); }
     catch { return new Set(); }
   },
-  savePinned(set) { localStorage.setItem("sodium.pinned", JSON.stringify([...set])); },
+  savePinned(set) { localStorage.setItem("sodium.pinned", JSON.stringify([...set])); scheduleConfigSave(); },
   disabled() {
     try { return new Set(JSON.parse(localStorage.getItem("sodium.disabled") || "[]")); }
     catch { return new Set(); }
   },
-  saveDisabled(set) { localStorage.setItem("sodium.disabled", JSON.stringify([...set])); },
+  saveDisabled(set) { localStorage.setItem("sodium.disabled", JSON.stringify([...set])); scheduleConfigSave(); },
 };
+
+// Durable mirror of the local settings in config.json on the Rust
+// side: localStorage is the working copy, but it dies with the
+// webview profile data; config.json survives that. Saves are
+// debounced and revisioned; at startup a newer config.json wins.
+const CFG_KEYS = ["sodium.services", "sodium.pinned", "sodium.disabled", "sodium.showNames", "sodium.lastActive", "sodium.onboarded", "sodium.zoom", "sodium.zoomByService", "sodium.maxAlive", "sodium.downloads", "sodium.lastUpdateCheck"];
+let cfgRev = parseInt(localStorage.getItem("sodium.cfgRev") || "0", 10) || 0;
+let cfgTimer = null;
+let applyingConfig = false;
+function scheduleConfigSave() {
+  if (applyingConfig) return;
+  clearTimeout(cfgTimer);
+  cfgTimer = setTimeout(() => {
+    cfgRev += 1;
+    localStorage.setItem("sodium.cfgRev", String(cfgRev));
+    const data = {};
+    for (const k of CFG_KEYS) {
+      const v = localStorage.getItem(k);
+      if (v !== null) data[k] = v;
+    }
+    invoke("save_config", { data: JSON.stringify({ rev: cfgRev, data }) }).catch(() => {});
+  }, 250);
+}
 
 let services = store.load();
 // Unread counts per service id, reported by Rust from page titles
@@ -103,7 +126,9 @@ const pickerPanel = el("pickerPanel");
 const ctxPanel = el("ctxPanel");
 const iconPanel = el("iconPanel");
 const managePanel = el("managePanel");
-const allPanels = [pickerPanel, ctxPanel, iconPanel, managePanel];
+const dlPanel = el("dlPanel");
+const updatePanel = el("updatePanel");
+const allPanels = [pickerPanel, ctxPanel, iconPanel, managePanel, dlPanel, updatePanel];
 let ctxService = null;
 let iconTarget = null;
 
@@ -279,7 +304,7 @@ async function switchTo(s) {
   if (linkPopupOpen) await closeLinkPopup();
   if (allPanels.some(p => !p.hidden)) await closePanels();
   activeId = s.id; render();
-  localStorage.setItem("sodium.lastActive", s.id);
+  localStorage.setItem("sodium.lastActive", s.id); scheduleConfigSave();
   el("activeName").textContent = s.name;
   el("welcome").style.display = "none";
   try {
@@ -372,7 +397,7 @@ function renderPicker() {
   }
 }
 
-function markOnboarded() { localStorage.setItem("sodium.onboarded", "1"); }
+function markOnboarded() { localStorage.setItem("sodium.onboarded", "1"); scheduleConfigSave(); }
 
 async function openPicker() {
   searchInput.value = "";
@@ -504,7 +529,7 @@ async function setServiceDisabled(s, off) {
     await invoke("close_service", { id });
     if (activeId === id) {
       activeId = null;
-      if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive");
+      if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive"); scheduleConfigSave();
       el("activeName").textContent = "Sodium";
       el("welcome").style.display = "";
       showZoom();
@@ -542,7 +567,7 @@ async function deleteService(id) {
     el("activeName").textContent = "Sodium";
     el("welcome").style.display = "";
   }
-  if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive");
+  if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive"); scheduleConfigSave();
   await invoke("close_service", { id });
   render();
 }
@@ -624,7 +649,7 @@ el("manageBtn").addEventListener("click", openManage);
 el("manageClose").addEventListener("click", closePanels);
 el("showNamesToggle").addEventListener("change", () => {
   showNames = el("showNamesToggle").checked;
-  localStorage.setItem("sodium.showNames", showNames ? "1" : "0");
+  localStorage.setItem("sodium.showNames", showNames ? "1" : "0"); scheduleConfigSave();
   render();
 });
 
@@ -860,22 +885,146 @@ el("linkCopy").addEventListener("click", async () => {
   setTimeout(() => { el("linkCopy").textContent = "Salin link"; }, 1500);
 });
 
-// Download toast: Rust reports the saved path when a download finishes.
+// Downloads: Rust reports starts and finishes. Starts drive the
+// top-bar pill; finishes feed the toast and the history panel
+// (kept in localStorage, newest first, capped at 50).
 let toastTimer = null;
-window.__TAURI__.event.listen("download-finished", (e) => {
-  const path = String(e.payload || "");
-  if (!path) return;
+function showToast(text, title) {
   const toast = el("toast");
-  toast.textContent = "Tersimpan: " + path;
-  toast.title = path;
+  toast.textContent = text;
+  toast.title = title || text;
   toast.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
+}
+
+let downloads = [];
+try { downloads = JSON.parse(localStorage.getItem("sodium.downloads") || "[]"); } catch { downloads = []; }
+let activeDownloads = 0;
+
+function saveDownloads() {
+  localStorage.setItem("sodium.downloads", JSON.stringify(downloads.slice(0, 50)));
+  scheduleConfigSave();
+}
+
+function sourceName(sourceId) {
+  if (sourceId === "link-popup") return "Popup link";
+  const s = services.find(x => x.id === sourceId);
+  return s ? s.name : sourceId;
+}
+
+window.__TAURI__.event.listen("download-started", (e) => {
+  activeDownloads += 1;
+  const pill = el("dlPill");
+  pill.textContent = "Mengunduh: " + String(e.payload || "file") + "…";
+  pill.hidden = false;
+});
+
+window.__TAURI__.event.listen("download-finished", (e) => {
+  const [path, sourceId, success] = e.payload || [];
+  activeDownloads = Math.max(0, activeDownloads - 1);
+  if (activeDownloads === 0) el("dlPill").hidden = true;
+  if (success && path) {
+    const name = String(path).split(/[\\/]/).pop();
+    downloads.unshift({ name, path: String(path), source: sourceId || "", time: Date.now() });
+    saveDownloads();
+    showToast("Tersimpan: " + path, path);
+    if (!dlPanel.hidden) renderDownloads();
+  } else if (!success) {
+    showToast("Unduhan gagal atau dibatalkan.");
+  }
+});
+
+function renderDownloads() {
+  const list = el("dlList");
+  list.innerHTML = "";
+  if (!downloads.length) {
+    const d = document.createElement("div");
+    d.className = "dlEmpty";
+    d.textContent = "Belum ada unduhan.";
+    list.appendChild(d);
+    return;
+  }
+  for (const d of downloads) {
+    const row = document.createElement("div");
+    row.className = "dlRow";
+    const info = document.createElement("div");
+    info.className = "dlInfo";
+    const name = document.createElement("div");
+    name.className = "dlName";
+    name.textContent = d.name;
+    name.title = d.path;
+    const meta = document.createElement("div");
+    meta.className = "dlMeta";
+    meta.textContent = sourceName(d.source) + " · " + new Date(d.time).toLocaleString("id-ID");
+    info.append(name, meta);
+    const btn = document.createElement("button");
+    btn.className = "btnGhost";
+    btn.textContent = "Buka folder";
+    btn.addEventListener("click", () => invoke("reveal_file", { path: d.path }).catch(() => {}));
+    row.append(info, btn);
+    list.appendChild(row);
+  }
+}
+
+el("dlBtn").addEventListener("click", () => { renderDownloads(); openPanel(dlPanel); });
+el("dlClose").addEventListener("click", closePanels);
+el("reloadBtn").addEventListener("click", () => { invoke("reload_service").catch(() => {}); });
+
+// Update check against the public GitHub repo: the latest release
+// is compared with the running version; the installer asset is
+// opened in the browser, where the download happens.
+let appVer = "";
+let updateAssetUrl = "";
+function versionNewer(latest, current) {
+  const a = String(latest).split(".").map(n => parseInt(n, 10) || 0);
+  const b = String(current).split(".").map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return false;
+}
+
+async function checkUpdate(manual) {
+  try {
+    const res = await fetch("https://api.github.com/repos/aindranto/Sodium/releases/latest", {
+      headers: { "Accept": "application/vnd.github+json" },
+    });
+    if (!res.ok) throw new Error("http " + res.status);
+    const rel = await res.json();
+    const latest = String(rel.tag_name || "").replace(/^v/, "");
+    if (!latest || !appVer) throw new Error("no version");
+    if (!versionNewer(latest, appVer)) {
+      if (manual) showToast("Sodium sudah versi terbaru (v" + appVer + ").");
+      return;
+    }
+    const asset = (rel.assets || []).find(a => /setup\.exe$/i.test(a.name)) || (rel.assets || [])[0];
+    updateAssetUrl = asset ? asset.browser_download_url : rel.html_url;
+    el("updateTitle").textContent = "Sodium v" + latest + " tersedia";
+    el("updateBody").textContent = (rel.body || "").trim() || "Catatan rilis tidak tersedia.";
+    openPanel(updatePanel);
+  } catch {
+    if (manual) showToast("Gagal memeriksa update — periksa koneksi internet.");
+  }
+}
+
+function scheduleDailyUpdateCheck() {
+  const today = new Date().toDateString();
+  if (localStorage.getItem("sodium.lastUpdateCheck") === today) return;
+  localStorage.setItem("sodium.lastUpdateCheck", today); scheduleConfigSave();
+  setTimeout(() => checkUpdate(false), 5000);
+}
+
+el("updateBtn").addEventListener("click", () => checkUpdate(true));
+el("updateLater").addEventListener("click", closePanels);
+el("updateDownload").addEventListener("click", () => {
+  if (updateAssetUrl) invoke("open_external", { url: updateAssetUrl }).catch(() => {});
+  closePanels();
 });
 
 // Read the version from the app so it cannot go stale.
 window.__TAURI__.app.getVersion()
-  .then(v => { el("appVersion").textContent = "Sodium v" + v; })
+  .then(v => { appVer = v; el("appVersion").textContent = "Sodium v" + v; })
   .catch(() => {});
 
 // Unread badge counts from Rust (page-title watcher in each service
@@ -924,11 +1073,11 @@ async function setZoomIdx(idx) {
   const scale = ZOOM_STEPS[idx];
   if (activeId) {
     zoomByService[activeId] = scale;
-    localStorage.setItem("sodium.zoomByService", JSON.stringify(zoomByService));
+    localStorage.setItem("sodium.zoomByService", JSON.stringify(zoomByService)); scheduleConfigSave();
     await invoke("set_service_zoom", { id: activeId, scale });
   } else {
     // No service open: the buttons adjust the default for new services.
-    localStorage.setItem("sodium.zoom", String(scale));
+    localStorage.setItem("sodium.zoom", String(scale)); scheduleConfigSave();
   }
   showZoom();
 }
@@ -937,32 +1086,77 @@ el("zoomOut").addEventListener("click", () => { const i = zoomIdxFor(activeId); 
 el("zoomLabel").addEventListener("click", () => setZoomIdx(ZOOM_STEPS.indexOf(1.0)));
 showZoom();
 
-// "Hidup bareng" setting: how many non-pinned services may stay alive.
-// Stored locally, pushed into the Rust side on startup and on change.
-const maxAliveSel = el("maxAlive");
-const savedMax = localStorage.getItem("sodium.maxAlive") || "1";
-maxAliveSel.value = savedMax;
-invoke("set_max_alive", { max: Number(savedMax) });
-maxAliveSel.addEventListener("change", () => {
-  localStorage.setItem("sodium.maxAlive", maxAliveSel.value);
-  invoke("set_max_alive", { max: Number(maxAliveSel.value) });
-});
+// Startup: a newer config.json (Rust side) replaces the local
+// working copy first; only then are settings pushed to Rust and
+// the last session restored.
+init();
+async function init() {
+  await applyConfigFromRust();
 
-// Restore pinned flags into the Rust side on startup
-for (const id of pinned) invoke("set_pinned", { id, pinned: true });
-render();
+  // "Hidup bareng" setting: how many non-pinned services may stay
+  // alive. Stored locally, pushed to Rust on startup and on change.
+  const maxAliveSel = el("maxAlive");
+  const savedMax = localStorage.getItem("sodium.maxAlive") || "1";
+  maxAliveSel.value = savedMax;
+  invoke("set_max_alive", { max: Number(savedMax) });
+  maxAliveSel.addEventListener("change", () => {
+    localStorage.setItem("sodium.maxAlive", maxAliveSel.value); scheduleConfigSave();
+    invoke("set_max_alive", { max: Number(maxAliveSel.value) });
+  });
 
-// One-time favicon fetch for services that still have no icon image
-// (new custom services fetch theirs when they are added).
-for (const s of services) fetchFaviconFor(s);
+  // Restore pinned flags into the Rust side on startup
+  for (const id of pinned) invoke("set_pinned", { id, pinned: true });
+  render();
 
-// First run (or first run of v0.2.0+): show the service picker once.
-// Otherwise reopen the service that was active when Sodium was closed,
-// like Ferdium does, instead of landing on the welcome screen.
-if (!localStorage.getItem("sodium.onboarded")) {
-  openPicker();
-} else {
-  const lastId = localStorage.getItem("sodium.lastActive");
-  const last = services.find(s => s.id === lastId);
-  if (last && !disabled.has(last.id)) switchTo(last);
+  // One-time favicon fetch for services that still have no icon image
+  // (new custom services fetch theirs when they are added).
+  for (const s of services) fetchFaviconFor(s);
+
+  // Pinned services start hidden so their notifications work from
+  // boot; the visible restore below reuses the webview if the
+  // restored service is the pinned one.
+  for (const id of pinned) {
+    const s = services.find(x => x.id === id);
+    if (s && !disabled.has(id)) {
+      try { await invoke("start_service_hidden", { id: s.id, url: s.url }); } catch {}
+    }
+  }
+
+  // First run: show the service picker once. Otherwise reopen the
+  // service that was active when Sodium was closed, like Ferdium
+  // does, instead of landing on the welcome screen.
+  if (!localStorage.getItem("sodium.onboarded")) {
+    openPicker();
+  } else {
+    const lastId = localStorage.getItem("sodium.lastActive");
+    const last = services.find(s => s.id === lastId);
+    if (last && !disabled.has(last.id)) switchTo(last);
+  }
+  scheduleDailyUpdateCheck();
+}
+
+async function applyConfigFromRust() {
+  try {
+    const text = await Promise.race([
+      invoke("load_config"),
+      new Promise(r => setTimeout(() => r(null), 800)),
+    ]);
+    if (!text) { scheduleConfigSave(); return; }
+    const snap = JSON.parse(text);
+    if (!snap || !snap.data || !(snap.rev > cfgRev)) return;
+    applyingConfig = true;
+    for (const k of CFG_KEYS) {
+      if (k in snap.data) localStorage.setItem(k, snap.data[k]);
+      else localStorage.removeItem(k);
+    }
+    cfgRev = snap.rev;
+    localStorage.setItem("sodium.cfgRev", String(cfgRev));
+    applyingConfig = false;
+    services = store.load();
+    pinned = store.pinned();
+    disabled = store.disabled();
+    showNames = localStorage.getItem("sodium.showNames") === "1";
+    try { zoomByService = JSON.parse(localStorage.getItem("sodium.zoomByService") || "{}"); } catch { zoomByService = {}; }
+    el("showNamesToggle").checked = showNames;
+  } catch { applyingConfig = false; }
 }
