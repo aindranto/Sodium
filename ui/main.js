@@ -1049,14 +1049,31 @@ function mgIconButton(icon, cls, title, onClick) {
   return b;
 }
 
-let dragIdx = null; // services index being dragged in the Kelola list
+// Pointer-based drag reorder for the Kelola list. HTML5 drag &
+// drop never actually starts inside Sodium's WebView2 windows, so
+// the grip tracks pointer events directly instead: the dragged
+// row follows the cursor via a transform while the other rows
+// stay put in the layout.
+let mgDrag = null; // { from, startY, startScroll, insertBefore, row }
 
 function clearDragMarks() {
   for (const r of manageList.querySelectorAll(".mgRow")) r.classList.remove("dropAbove", "dropBelow");
 }
-function dragTargetOf(row, e) {
-  const r = row.getBoundingClientRect();
-  return { idx: Number(row.dataset.idx), below: (e.clientY - r.top) > r.height / 2 };
+
+// Where would the dragged row land if dropped at this pointer Y?
+// Returns the original services index to insert before
+// (services.length = past the end) and the row to mark.
+function mgInsertPoint(clientY) {
+  let lastOther = null;
+  for (const r of manageList.querySelectorAll(".mgRow")) {
+    if (mgDrag && r === mgDrag.row) continue;
+    lastOther = r;
+    const rect = r.getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) {
+      return { before: Number(r.dataset.idx), mark: r, below: false };
+    }
+  }
+  return { before: services.length, mark: lastOther, below: true };
 }
 
 function renderManage() {
@@ -1068,51 +1085,61 @@ function renderManage() {
     const row = document.createElement("div");
     row.className = "mgRow" + (disabled.has(s.id) ? " off" : "");
     row.dataset.idx = String(idx);
-    // Drag & drop reorder: only the grip arms dragging, so text
+    // Pointer drag reorder: only the grip starts a drag, so text
     // selection and button clicks elsewhere on the row stay normal.
     const grip = document.createElement("span");
     grip.className = "mgGrip";
     grip.title = "Seret untuk mengubah urutan";
     grip.setAttribute("aria-label", grip.title);
     grip.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>';
-    grip.addEventListener("mousedown", () => { row.draggable = true; });
-    grip.addEventListener("mouseup", () => { if (dragIdx === null) row.draggable = false; });
-    row.addEventListener("dragstart", (e) => {
-      dragIdx = idx;
+    grip.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || mgDrag) return;
+      e.preventDefault();
+      mgDrag = {
+        from: idx,
+        startY: e.clientY,
+        startScroll: manageList.scrollTop,
+        insertBefore: idx,
+        row,
+      };
       row.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      try { e.dataTransfer.setData("text/plain", String(idx)); } catch { /* older WebView2 */ }
-    });
-    row.addEventListener("dragend", () => {
-      row.draggable = false;
-      row.classList.remove("dragging");
-      dragIdx = null;
-      clearDragMarks();
-    });
-    row.addEventListener("dragover", (e) => {
-      if (dragIdx === null) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      clearDragMarks();
-      const t = dragTargetOf(row, e);
-      row.classList.add(t.below ? "dropBelow" : "dropAbove");
-    });
-    row.addEventListener("drop", (e) => {
-      e.preventDefault();
-      if (dragIdx === null) return;
-      const from = dragIdx;
-      const t = dragTargetOf(row, e);
-      let to = t.idx + (t.below ? 1 : 0);
-      dragIdx = null;
-      clearDragMarks();
-      if (to > from) to -= 1;
-      if (to !== from && to >= 0 && to < services.length) {
-        const [it] = services.splice(from, 1);
-        services.splice(to, 0, it);
-        store.save(services);
-        render();
-      }
-      renderManage();
+      manageList.classList.add("dragging");
+      try { grip.setPointerCapture(e.pointerId); } catch { /* older WebView2 */ }
+      const onMove = (ev) => {
+        if (!mgDrag) return;
+        // Auto-scroll when the pointer nears the list's edges,
+        // then follow the pointer (the scroll delta is part of the
+        // offset so the row stays glued to the cursor).
+        const lr = manageList.getBoundingClientRect();
+        if (ev.clientY < lr.top + 40) manageList.scrollTop -= 10;
+        else if (ev.clientY > lr.bottom - 40) manageList.scrollTop += 10;
+        const dy = (ev.clientY - mgDrag.startY) + (manageList.scrollTop - mgDrag.startScroll);
+        row.style.transform = "translateY(" + dy + "px)";
+        const p = mgInsertPoint(ev.clientY);
+        mgDrag.insertBefore = p.before;
+        clearDragMarks();
+        if (p.mark) p.mark.classList.add(p.below ? "dropBelow" : "dropAbove");
+      };
+      const onUp = () => {
+        grip.removeEventListener("pointermove", onMove);
+        grip.removeEventListener("pointerup", onUp);
+        grip.removeEventListener("pointercancel", onUp);
+        if (!mgDrag) return;
+        const from = mgDrag.from;
+        let to = mgDrag.insertBefore;
+        mgDrag = null;
+        if (to > from) to -= 1;
+        if (to !== from && to >= 0 && to < services.length) {
+          const [it] = services.splice(from, 1);
+          services.splice(to, 0, it);
+          store.save(services);
+          render();
+        }
+        renderManage();
+      };
+      grip.addEventListener("pointermove", onMove);
+      grip.addEventListener("pointerup", onUp);
+      grip.addEventListener("pointercancel", onUp);
     });
     const ic = document.createElement("span");
     ic.className = "tileIcon mgIcon";
