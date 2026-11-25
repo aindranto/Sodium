@@ -51,11 +51,11 @@ Analisis lengkap mengenai kode sumber Ferdium dan pertimbangan desainnya tersedi
 - **Kelompok layanan**: beri nama kelompok pada layanan lewat panel Kelola (mis. "Kerja", "Pribadi") — sidebar menampilkan **garis pemisah** antar kelompok agar daftar panjang tetap enak dipindai.
 - **Quick Switcher**: tekan **Alt+Space** untuk membuka panel ganti layanan di tengah layar — ketik nama layanan (atau nama kelompoknya), lalu Enter atau klik untuk langsung pindah. Layanan yang sedang aktif dan yang sedang hidup ikut ditandai.
 - **Mulai kelompok**: klik kanan garis pemisah kelompok di sidebar untuk menghidupkan semua layanan dalam kelompok itu sekaligus (batas *Hidup bareng* tetap berlaku seperti biasa).
-- **Ekspor & impor konfigurasi**: cadangan daftar layanan, kelompok, pin, zoom, dan pengaturan ke satu file JSON dari panel Kelola, lalu pulihkan di PC lain. Sesi login tidak ikut berpindah — di PC baru, login ulang per layanan.
+- **Ekspor & impor konfigurasi**: cadangkan daftar layanan, kelompok, pin, zoom, dan pengaturan ke satu file JSON dari panel Kelola, lalu pulihkan di PC lain. Sesi login tidak ikut berpindah — di PC baru, login ulang per layanan.
 - **Penyimpanan awet**: daftar layanan dan pengaturan tersimpan di file `config.json`, sehingga tidak hilang walau data webview terhapus.
-- **Duplikat (akun beda)**: melalui panel Kelola layanan: menyalin URL dan ikon dengan profil yang masih kosong, untuk masuk dengan akun lain pada layanan yang sama.
+- **Duplikat (akun beda)** melalui panel Kelola layanan: menyalin URL dan ikon dengan profil yang masih kosong, untuk masuk dengan akun lain pada layanan yang sama.
 - **Ganti nama** layanan melalui panel Kelola layanan: nama bebas tanpa memengaruhi sesi masuk, pin, atau zoom (semua terikat pada id layanan, bukan nama). Layanan custom URL tanpa logo katalog mengambil favicon situsnya secara otomatis.
-- **Panel Kelola layanan** (tombol di sidebar, di bawah tombol "+"): semua pengaturan layanan dalam satu tempat — edit nama, ikon, dan **URL** (webview ditutup dan dibuka ulang bila URL berubah), ubah urutan layanan, pin, nonaktifkan, duplikat, dan hapus — plus saklar menampilkan nama layanan di bawah ikon sidebar dan pilihan **ukuran ikon sidebar** (Kecil/Sedang/Besar, berguna di monitor resolusi rendah). Menu klik kanan kini rampung (Pin/Unpin, Nonaktifkan/Aktifkan lagi, Kelola layanan) dan tampil sebagai panel di tengah layar.
+- **Panel Kelola layanan** (tombol di sidebar, di bawah tombol "+"): semua pengaturan layanan dalam satu tempat — edit nama, ikon, dan **URL** (webview ditutup dan dibuka ulang bila URL berubah), ubah urutan layanan, pin, nonaktifkan, duplikat, dan hapus — plus saklar menampilkan nama layanan di bawah ikon sidebar dan pilihan **ukuran ikon sidebar** (Kecil/Sedang/Besar, berguna di monitor resolusi rendah). Menu klik kanan kini ramping (Pin/Unpin, Nonaktifkan/Aktifkan lagi, Kelola layanan) dan tampil sebagai panel di tengah layar.
 - Notifikasi situs dapat diaktifkan, karena Sodium menjawab permintaan izin notifikasi dengan benar; notifikasi tiap layanan kemudian ditampilkan sebagai notifikasi Windows oleh WebView2, sama seperti di browser.
 
 ## Pengembangan
@@ -64,8 +64,8 @@ Persyaratan: [Rust](https://www.rust-lang.org/tools/install), Node 20+, runtime 
 
 ```bash
 npm install
-npm run dev    # tauri dev
-npm run build  # tauri build -> installer tersedia di src-tauri/target/release/bundle
+npm run dev     # tauri dev
+npm run build   # tauri build -> installer tersedia di src-tauri/target/release/bundle
 ```
 
 ## Lisensi
