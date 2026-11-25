@@ -37,8 +37,14 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .mgSetItem{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer}
 .mgSetItem select{background:var(--raised);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;padding:4px 6px;font-size:12px}
 .manageList{overflow-y:auto;margin:0 0 16px;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding-right:4px}
-.mgRow{display:grid;grid-template-columns:36px 1fr 76px auto;gap:12px;align-items:center;background:var(--raised);border:1px solid var(--border-strong);border-radius:12px;padding:10px 12px}
+.mgRow{display:grid;grid-template-columns:20px 36px 1fr auto auto;gap:12px;align-items:center;background:var(--raised);border:1px solid var(--border-strong);border-radius:12px;padding:10px 12px}
 .mgRow.off{opacity:.6}
+.mgRow.dragging{opacity:.45}
+.mgRow.dropAbove{box-shadow:0 -2px 0 0 var(--accent)}
+.mgRow.dropBelow{box-shadow:0 2px 0 0 var(--accent)}
+.mgGrip{display:flex;align-items:center;justify-content:center;color:var(--faint);cursor:grab;touch-action:none}
+.mgGrip:active{cursor:grabbing}
+.mgAct.danger:hover{background:var(--danger-bg);color:var(--danger-text)}
 .tileIcon.mgIcon{width:36px;height:36px;border-radius:10px;font-size:19px;flex:none}
 .mgInfo{flex:1;min-width:0}
 .mgName{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -157,16 +163,13 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .pickerCustom h4{margin:0 0 8px;font-size:13px;color:var(--muted)}
 .customRow{display:flex;gap:8px;flex-wrap:wrap}
 .customRow input{flex:1 1 140px;padding:9px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text)}
-.customRow .iconInput{flex:0 0 76px;text-align:center}
 .customRow button{padding:8px 14px;border-radius:8px;border:0;font-weight:600;cursor:pointer}
-.palette{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.palette button{width:36px;height:36px;border-radius:10px;border:1px solid var(--border-strong);background:var(--raised);font-size:18px;cursor:pointer}
-.palette button:hover{background:var(--hover)}
+.glyphGrid{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.glyphBtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--border-strong);background:var(--raised);color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.glyphBtn:hover{background:var(--hover);color:var(--text)}
+.glyphBtn.sel{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
 .pickerFoot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .pickerFoot button{padding:8px 14px;border-radius:8px;border:0;font-weight:600;cursor:pointer}
-#iconPanel{max-height:calc(100vh - 112px);overflow-y:auto}
-#iconPanel label{display:block;margin:12px 0;font-size:13px;color:var(--muted)}
-#iconPanel input{display:block;width:100%;margin-top:4px;padding:9px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text)}
 
 #maxAlive{background:var(--raised);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;padding:4px 6px;font-size:12px}
 .imgRow{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
@@ -197,8 +200,35 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .swatch{width:28px;height:28px;border-radius:8px;border:1px solid var(--border-strong);cursor:pointer;padding:0}
 .swatch.sel{outline:2px solid var(--accent);outline-offset:2px}
 .colorRow{margin-top:12px;font-size:13px;color:var(--muted)}
-#iconCombo{margin-top:6px}
 
-.svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgAct,.mgFormBtns button,.zoomCtl button,.linkBtns button,#addBtn,#manageBtn,.swatch,.palette button,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
+.svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgAct,.mgFormBtns button,.zoomCtl button,.linkBtns button,#addBtn,#manageBtn,.swatch,.glyphBtn,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
 .svc:active,.tile:active,.toolBtn:active,#addBtn:active,#manageBtn:active,.zoomCtl button:active,.linkBtns button:active,.panel button:active,.pickerFoot button:active,.mgAct:active,.mgFormBtns button:active,.customRow button:active{transform:scale(.98)}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+#editPanel{width:min(560px,calc(100vw - 108px))}
+#adblockPanel{width:min(460px,calc(100vw - 108px))}
+#confirmPanel{width:min(400px,calc(100vw - 108px))}
+#editPreview{width:44px;height:44px;border-radius:11px;font-size:22px;flex:none}
+.editScroll{overflow-y:auto;min-height:0;flex:1;padding-right:4px;margin-top:12px}
+.editSection{margin-top:16px;border-top:1px solid var(--border);padding-top:12px}
+.editSecLabel{font-size:13px;color:var(--muted);margin-bottom:8px}
+.iconModes{display:flex;gap:6px;flex-wrap:wrap}
+.iconModes button{padding:7px 12px;border-radius:99px;border:1px solid var(--border-strong);background:var(--raised);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer}
+.iconModes button:hover{background:var(--hover);color:var(--text)}
+.iconModes button.sel{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+#editIconText{margin-top:10px;width:150px;padding:9px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text);text-align:center}
+.hueRow{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:13px;color:var(--muted)}
+.hueRow input[type="range"]{flex:1;accent-color:var(--accent)}
+.hueRow .hueVal{min-width:34px;text-align:right;color:var(--text);font-weight:600}
+.hueRow button{padding:6px 10px;border-radius:8px;border:0;font-weight:600;cursor:pointer;font-size:12px}
+.editToggles{display:flex;flex-direction:column;gap:10px;margin-top:16px;border-top:1px solid var(--border);padding-top:14px}
+#editAdblockBtn{margin-top:14px;padding:8px 14px;border-radius:8px;border:0;font-weight:600;cursor:pointer}
+.pickerFoot .footLeft{margin-right:auto}
+#updateBtn{position:relative}
+.updateDot{position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:var(--badge);pointer-events:none}
+.updateDot[hidden]{display:none}
+.confirmBody{font-size:13px;color:var(--text-2);line-height:1.55;margin:12px 0 4px}
+.adblockToggleRow{font-size:13px;color:var(--text)}
+.adblockMeta{display:flex;flex-direction:column;gap:6px;margin:14px 0}
+.adblockMeta div{display:flex;justify-content:space-between;font-size:13px}
+.adblockMeta span{color:var(--muted)}

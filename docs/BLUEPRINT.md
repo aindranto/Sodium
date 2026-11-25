@@ -48,3 +48,28 @@ Angka layanan aktif per halaman adalah sifat web app-nya sendiri (WhatsApp Web d
 - **Minor (0.x.0)** — hanya untuk kemampuan yang benar-benar baru.
 - **1.0** — keputusan sadar Agung bahwa Sodium matang untuk publik,
   bukan hasil kehabisan angka.
+
+## 6. Catatan v0.8.0 (25 Nov 2026)
+
+- **Panel Kelola gaya Container** (Firefox/Zen): daftar seret-untuk-urut
+  (handle grip; tombol naik/turun pensiun), pensil membuka satu dialog
+  edit per layanan, tempat sampah menghapus lewat dialog konfirmasi.
+  Panel ikon terpisah dihapus — editor ikon menyatu ke dialog edit.
+- **Editor ikon**: sumber logo brand / glyph SVG / teks inisial /
+  gambar upload (draft, berlaku saat Simpan). Pilihan eksplisit selalu
+  menang atas logo brand (memperbaiki bug teks tak pernah tampil untuk
+  layanan ber-brand). **Slider hue** -180..+180 untuk ikon gambar,
+  disimpan per layanan (`hue`), diterapkan sebagai CSS `hue-rotate()`.
+- **Katalog 31 layanan** (+Lazada, Blibli, Bukalapak, Threads, ChatGPT,
+  Gemini, Claude, Notion, Zoom, Google Drive). Tokopedia/Lazada/ChatGPT
+  tidak ada di Simple Icons → glyph bawaan. **Emoji dihapus total**
+  (keputusan Agung: terkesan jadul); ikon tersimpan yang emoji
+  dimigrasi lembut ke inisial nama.
+- **Notifikasi update aplikasi**: titik penanda persisten di tombol
+  update, cek otomatis saat startup + tiap 6 jam, cek gagal tidak
+  menghanguskan jadwal, panel tidak lagi auto-popup.
+- **Adblock khusus YouTube**: script di `adblock/youtube.js` (repo)
+  di-inject Rust hanya ke webview ber-host youtube.com; panel sendiri
+  (saklar global, versi skrip, cek manual) dan **update terpisah**
+  dari rilis aplikasi lewat `adblock/manifest.json`. Adblock umum +
+  DNS tetap tidak dibangun (keputusan lama Agung).

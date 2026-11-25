@@ -53,6 +53,24 @@ struct AppState {
     /// True once the tray icon exists; only then may closing the
     /// window mean hiding it (otherwise the app would be stranded).
     tray_ok: std::sync::atomic::AtomicBool,
+    /// The active YouTube adblock script: the newest copy the UI
+    /// downloaded from the repo, or the bundled fallback. Injected
+    /// into YouTube service webviews when they are created.
+    adblock_script: Mutex<String>,
+    /// Whether the YouTube adblock is switched on (UI setting,
+    /// pushed to Rust at startup and whenever the switch flips).
+    adblock_enabled: Mutex<bool>,
+}
+
+/// The YouTube adblock script bundled with the app: the fallback
+/// until the UI downloads a newer one from the repo (the script
+/// lives in adblock/ at the repo root so it can be updated without
+/// an app release).
+const BUNDLED_YT_ADBLOCK: &str = include_str!("../../adblock/youtube.js");
+
+/// youtube.com and any of its subdomains (www., m., music., ...).
+fn is_youtube_host(host: &str) -> bool {
+    host == "youtube.com" || host.ends_with(".youtube.com")
 }
 
 fn label_for(id: &str) -> String {
@@ -298,7 +316,7 @@ fn create_service_webview(
     let app_for_links = app.clone();
     let app_for_title = app.clone();
     let id_for_title = id.to_string();
-    let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
+    let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed.clone()))
         .data_directory(data_dir)
         // Tauri's own drop handler replaces WebView2's on Windows,
         // so dropped files would never reach the page (no attaching
@@ -321,6 +339,20 @@ fn create_service_webview(
                 (id_for_title.clone(), count),
             );
         });
+    // YouTube adblock: YouTube services get the adblock script as an
+    // initialization script (it runs before the page's own scripts).
+    // Webviews that are already alive are not touched — the script
+    // applies from the next time the service is created.
+    if *state.adblock_enabled.lock().unwrap() {
+        if let Some(host) = parsed.host_str() {
+            if is_youtube_host(host) {
+                let script = state.adblock_script.lock().unwrap().clone();
+                if !script.is_empty() {
+                    builder = builder.initialization_script(script);
+                }
+            }
+        }
+    }
     let (pos, size) = service_bounds(window);
     window
         .add_child(builder, pos, size)
@@ -791,6 +823,21 @@ fn reveal_file(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Replace the active YouTube adblock script (the UI downloaded a
+/// newer one from the repo). Applies to service webviews created
+/// after this call; alive ones keep the script they started with.
+#[tauri::command]
+fn set_adblock_script(state: State<'_, AppState>, script: String) {
+    *state.adblock_script.lock().unwrap() = script;
+}
+
+/// Switch the YouTube adblock on or off (applies at webview
+/// creation, like the script itself).
+#[tauri::command]
+fn set_adblock_enabled(state: State<'_, AppState>, enabled: bool) {
+    *state.adblock_enabled.lock().unwrap() = enabled;
+}
+
 /// Read the durable settings file (config.json), if it exists.
 /// The UI keeps its working copy in localStorage, which dies with
 /// the webview profile data; this file survives that.
@@ -872,6 +919,8 @@ pub fn run() {
         .manage(AppState {
             max_alive: Mutex::new(1),
             zoom: Mutex::new(HashMap::new()),
+            adblock_script: Mutex::new(BUNDLED_YT_ADBLOCK.to_string()),
+            adblock_enabled: Mutex::new(true),
             ..Default::default()
         })
         .setup(|app| {
@@ -946,7 +995,9 @@ pub fn run() {
             load_config,
             save_config,
             export_config,
-            import_config
+            import_config,
+            set_adblock_script,
+            set_adblock_enabled
         ])
         .on_window_event(|window, event| {
             if window.label() != "main" {

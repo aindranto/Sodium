@@ -8,17 +8,6 @@ Asal namanya: Ferdium dinamai seperti unsur kimia, sehingga versi ringannya adal
 
 > Sodium merupakan reimplementasi *clean-room* yang terinspirasi dari ide Ferdium, bukan fork dari kode sumbernya.
 
-## Tampilan
-
-![Layar sambutan Sodium](docs/screenshots/welcome.png)
-*Layar sambutan — tiga kartu fitur utama.*
-
-![Pemilih layanan](docs/screenshots/picker.png)
-*Pemilih layanan — 21 layanan populer sekali klik, plus custom URL.*
-
-![Menu klik kanan layanan](docs/screenshots/context-menu.png)
-*Menu klik kanan — pin, nonaktifkan, atau buka Kelola layanan.*
-
 ## Mengapa Sodium lebih ringan?
 
 Mengganti framework saja tidak menyelesaikan persoalan RAM di Windows, karena WebView2 juga berbasis Chromium — satu halaman WhatsApp Web tetap membutuhkan sumber daya yang sama. Penghematan Sodium berasal dari arsitekturnya:
@@ -38,16 +27,17 @@ Analisis lengkap mengenai kode sumber Ferdium dan pertimbangan desainnya tersedi
 
 ## Fitur
 
-- **Pemilih layanan** bergaya Ferdium yang tampil saat aplikasi pertama kali dibuka (dan melalui tombol "+"): 21 layanan populer yang ditambahkan dengan sekali klik — klik lagi untuk menambah akun kedua, ketiga, dan seterusnya pada layanan yang sama — dilengkapi kolom pencarian. Custom URL tetap tersedia.
-- **Ikon khusus untuk setiap layanan**: logo asli brand dari katalog (Simple Icons), dengan **warna tile dan warna logo yang dapat diatur sendiri**, dapat diganti melalui teks bebas (emoji / 1-2 huruf) atau **unggahan gambar sendiri** (.jpg / .jpeg / .png / .ico).
+- **Pemilih layanan** bergaya Ferdium yang tampil saat aplikasi pertama kali dibuka (dan melalui tombol "+"): 31 layanan populer yang ditambahkan dengan sekali klik — klik lagi untuk menambah akun kedua, ketiga, dan seterusnya pada layanan yang sama — dilengkapi kolom pencarian. Custom URL tetap tersedia.
+- **Ikon khusus untuk setiap layanan, tanpa emoji**: logo asli brand dari katalog (Simple Icons), set **glyph SVG** generik untuk layanan tanpa logo brand, teks inisial 1-2 huruf, atau **unggahan gambar sendiri** (.jpg / .jpeg / .png / .ico) — lengkap dengan **warna tile dan warna logo** yang dapat diatur sendiri, plus **slider hue** (-180..+180) untuk mewarnai ulang ikon gambar. Pilihan ikon Anda selalu menang atas logo brand bawaan.
 - **Bar atas** berisi nama layanan yang sedang aktif, tombol **muat ulang** layanan, **zoom** tampilan layanan (50%–200%, tersimpan secara permanen), pengaturan *Hidup bareng*, indikator unduhan, dan tombol **Cek update**.
 - **Pin** layanan agar selalu aktif (misalnya WhatsApp untuk notifikasi), **nonaktifkan** layanan untuk mematikannya secara total untuk sementara tanpa kehilangan sesi masuk, serta pintasan **Ctrl+1..9** untuk berpindah layanan.
 - **Tray & jalan di latar**: menutup jendela menyembunyikan Sodium ke system tray — layanan tetap hidup dan notifikasi tetap berjalan; keluar sepenuhnya melalui menu tray. Layanan yang di-pin **menyala otomatis saat startup** secara tersembunyi, jadi notifikasinya bekerja sejak awal.
-- **Panel Kelola layanan baru** — baris seragam berslot tetap (ikon, nama/URL, status, aksi), tombol aksi berupa ikon, duplikat dan hapus di dalam form edit; bar atas kini terpisah tegas: refresh + nama layanan di kiri, semua kontrol lain di kanan.
+- **Panel Kelola gaya Container** (seperti pengaturan Container di Firefox/Zen): daftar layanan dengan **handle seret** untuk mengubah urutan, ikon pensil untuk membuka **satu dialog edit per layanan** (nama, URL, kelompok, ikon, warna, pin, nonaktifkan, duplikat), dan ikon tempat sampah untuk menghapus (dengan dialog konfirmasi).
 - **Tema Obsidian Na** — tema gelap netral nyaris hitam dengan satu aksen kuning Na, token warna CSS, dan animasi mikro halus (panel membuka lembut, indikator aktif meluncur di sidebar, badge unread memantul saat bertambah). Mati otomatis bila Windows disetel mengurangi animasi.
 - **Tarik & letakkan file** langsung ke halaman layanan (misalnya melampirkan file di WhatsApp), sama seperti di browser.
 - **Unduhan**: dialog Simpan Sebagai, indikator unduhan yang sedang berjalan di bar atas, dan panel **riwayat unduhan** dengan tombol buka folder.
-- **Cek update**: tombol di bar atas (ditambah pemeriksaan otomatis sekali sehari) membandingkan versi terpasang dengan rilis terbaru di GitHub; installer versi baru diunduh langsung di dalam Sodium (dengan dialog Simpan Sebagai dan riwayat unduhan), lalu bisa dijalankan dari panel update — Sodium menutup sendiri agar installer menggantikannya.
+- **Cek update**: tombol di bar atas membandingkan versi terpasang dengan rilis terbaru di GitHub; pemeriksaan otomatis berjalan saat startup dan tiap 6 jam, dan **titik penanda** di tombol update menyala selama ada versi baru (panel dibuka dari tombolnya, tidak lagi muncul sendiri). Installer versi baru diunduh langsung di dalam Sodium (dengan dialog Simpan Sebagai dan riwayat unduhan), lalu bisa dijalankan dari panel update — Sodium menutup sendiri agar installer menggantikannya.
+- **Adblock khusus YouTube**: script kecil yang disuntikkan hanya ke layanan YouTube — menyembunyikan slot iklan dan melewati iklan video. Ada panelnya sendiri (klik kanan tile YouTube) dengan saklar aktif/nonaktif, dan script-nya **bisa diperbarui terpisah** dari rilis aplikasi karena dirawat sebagai file tersendiri di repo ini (`adblock/youtube.js`).
 - **Kelompok layanan**: beri nama kelompok pada layanan lewat panel Kelola (mis. "Kerja", "Pribadi") — sidebar menampilkan **garis pemisah** antar kelompok agar daftar panjang tetap enak dipindai.
 - **Quick Switcher**: tekan **Alt+Space** untuk membuka panel ganti layanan di tengah layar — ketik nama layanan (atau nama kelompoknya), lalu Enter atau klik untuk langsung pindah. Layanan yang sedang aktif dan yang sedang hidup ikut ditandai.
 - **Mulai kelompok**: klik kanan garis pemisah kelompok di sidebar untuk menghidupkan semua layanan dalam kelompok itu sekaligus (batas *Hidup bareng* tetap berlaku seperti biasa).
@@ -55,7 +45,7 @@ Analisis lengkap mengenai kode sumber Ferdium dan pertimbangan desainnya tersedi
 - **Penyimpanan awet**: daftar layanan dan pengaturan tersimpan di file `config.json`, sehingga tidak hilang walau data webview terhapus.
 - **Duplikat (akun beda)** melalui panel Kelola layanan: menyalin URL dan ikon dengan profil yang masih kosong, untuk masuk dengan akun lain pada layanan yang sama.
 - **Ganti nama** layanan melalui panel Kelola layanan: nama bebas tanpa memengaruhi sesi masuk, pin, atau zoom (semua terikat pada id layanan, bukan nama). Layanan custom URL tanpa logo katalog mengambil favicon situsnya secara otomatis.
-- **Panel Kelola layanan** (tombol di sidebar, di bawah tombol "+"): semua pengaturan layanan dalam satu tempat — edit nama, ikon, dan **URL** (webview ditutup dan dibuka ulang bila URL berubah), ubah urutan layanan, pin, nonaktifkan, duplikat, dan hapus — plus saklar menampilkan nama layanan di bawah ikon sidebar dan pilihan **ukuran ikon sidebar** (Kecil/Sedang/Besar, berguna di monitor resolusi rendah). Menu klik kanan kini ramping (Pin/Unpin, Nonaktifkan/Aktifkan lagi, Kelola layanan) dan tampil sebagai panel di tengah layar.
+- **Panel Kelola layanan** (tombol di sidebar, di bawah tombol "+"): semua pengaturan layanan dalam satu tempat — edit nama, ikon, dan **URL** lewat dialog edit (webview ditutup dan dibuka ulang bila URL berubah), urutan layanan diubah dengan menyeret handle, pin, nonaktifkan, duplikat, dan hapus — plus saklar menampilkan nama layanan di bawah ikon sidebar dan pilihan **ukuran ikon sidebar** (Kecil/Sedang/Besar, berguna di monitor resolusi rendah). Menu klik kanan ramping (Pin/Unpin, Nonaktifkan/Aktifkan lagi, Kelola layanan) dan tampil sebagai panel di tengah layar.
 - Notifikasi situs dapat diaktifkan, karena Sodium menjawab permintaan izin notifikasi dengan benar; notifikasi tiap layanan kemudian ditampilkan sebagai notifikasi Windows oleh WebView2, sama seperti di browser.
 
 ## Pengembangan
