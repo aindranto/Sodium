@@ -14,7 +14,7 @@ Asal namanya: Ferdium dinamai seperti unsur kimia, sehingga versi ringannya adal
 *Layar sambutan — tiga kartu fitur utama.*
 
 ![Pemilih layanan](docs/screenshots/picker.png)
-*Pemilih layanan — 21 layanan populer sekali klik, plus custom URL.*
+*Pemilih layanan — 31 layanan populer sekali klik, plus custom URL.*
 
 ![Menu klik kanan layanan](docs/screenshots/context-menu.png)
 *Menu klik kanan — pin, nonaktifkan, atau buka Kelola layanan.*
