@@ -73,3 +73,18 @@ Angka layanan aktif per halaman adalah sifat web app-nya sendiri (WhatsApp Web d
   (saklar global, versi skrip, cek manual) dan **update terpisah**
   dari rilis aplikasi lewat `adblock/manifest.json`. Adblock umum +
   DNS tetap tidak dibangun (keputusan lama Agung).
+
+## 7. Catatan v0.8.2 (25 Nov 2026)
+
+- **Parkir off-screen menggantikan hide** untuk webview layanan
+  non-aktif: layanan yang tidak sedang ditampilkan kini dipindah ke
+  posisi jauh di luar layar (tetap shown, ukuran tetap), bukan
+  di-`hide()`. Alasan: controller WebView2 yang hidden membuat
+  halaman berstatus "tidak terlihat" dan Chromium merem aktivitas
+  latarnya setelah beberapa menit — WhatsApp (termasuk yang di-pin,
+  yang tidak pernah dimusnahkan tapi duduk hidden sejak startup)
+  kehilangan sesi dan minta scan QR ulang. Dengan parkir, halaman
+  tetap dianggap terlihat dan berjalan normal. Hide asli hanya
+  tersisa untuk panel modal UI dan popup link. Resize jendela hanya
+  memperbarui ukuran webview terparkir, posisinya tidak ditarik
+  kembali ke layar.

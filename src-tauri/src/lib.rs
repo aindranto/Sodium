@@ -38,8 +38,9 @@ struct AppState {
     /// an entry use 100%.
     zoom: Mutex<HashMap<String, f64>>,
     /// Label of the service webview currently shown. Alive service
-    /// webviews are stacked native controls, so exactly one may be
-    /// visible at a time: this one.
+    /// webviews are stacked native controls, so exactly one may
+    /// occupy the service area at a time: this one. The rest are
+    /// parked off-screen (see park_webview).
     active: Mutex<Option<String>>,
     /// Whether the link popup is currently open over the active service.
     link_open: Mutex<bool>,
@@ -120,6 +121,26 @@ fn service_bounds(window: &tauri::Window) -> (LogicalPosition<f64>, LogicalSize<
         LogicalPosition::new(SIDEBAR_W, TOPBAR_H),
         LogicalSize::new(w - SIDEBAR_W, h - TOPBAR_H),
     )
+}
+
+/// Where inactive service webviews are parked: far outside every
+/// monitor, at their normal service-area size.
+const PARK_POS: f64 = -32000.0;
+
+/// Park a service webview off-screen instead of hiding it.
+///
+/// A hidden WebView2 controller reports its page as not visible, and
+/// Chromium then throttles the page's background work (timers, sync)
+/// hard after a few minutes. WhatsApp Web loses its session that way
+/// and demands a fresh QR scan — even for pinned services, which are
+/// never destroyed but used to sit hidden from startup. A parked
+/// webview stays shown, so the browser keeps treating the page as
+/// visible and it runs exactly as if it were on screen; only its
+/// position is off-screen. (Eviction still destroys webviews as
+/// before — parking only replaces hiding.)
+fn park_webview(wv: &tauri::Webview) {
+    let _ = wv.set_position(LogicalPosition::new(PARK_POS, PARK_POS));
+    let _ = wv.show();
 }
 
 /// Download handler for a service or popup webview: without it,
@@ -360,9 +381,9 @@ fn create_service_webview(
     Ok(())
 }
 
-/// Create a pinned service's webview at startup without showing
-/// it, so its notifications work from boot. Async for the same
-/// WebView2 reason as switch_service.
+/// Create a pinned service's webview at startup, parked off-screen
+/// (not hidden — see park_webview), so its notifications work from
+/// boot. Async for the same WebView2 reason as switch_service.
 #[tauri::command]
 async fn start_service_hidden(
     app: tauri::AppHandle,
@@ -390,7 +411,7 @@ async fn start_service_hidden(
     if let Some(wv) = app.get_webview(&label) {
         let z = state.zoom.lock().unwrap().get(&id).copied().unwrap_or(1.0);
         let _ = wv.set_zoom(z);
-        let _ = wv.hide();
+        park_webview(&wv);
     }
     let mut mru = state.alive_mru.lock().unwrap();
     if !mru.contains(&label) {
@@ -491,15 +512,16 @@ async fn switch_service(
         let _ = wv.set_zoom(z);
     }
 
-    // Native webviews stack with the newest on top, so show only
-    // the target and hide the rest — otherwise the covering webview
-    // keeps hiding the one switched to.
+    // Native webviews stack with the newest on top, so only the
+    // target may sit in the service area; the rest are parked
+    // off-screen (not hidden — see park_webview) so their pages
+    // keep running unthrottled.
     *state.active.lock().unwrap() = Some(label.clone());
     for wv in app.webviews().values() {
         if wv.label() == label {
             let _ = wv.show();
         } else if wv.label().starts_with("service-") {
-            let _ = wv.hide();
+            park_webview(wv);
         }
     }
 
@@ -564,18 +586,29 @@ fn evict_down_to(app: &tauri::AppHandle, state: &AppState, target: usize) {
 
 /// Hide or show all alive service webviews while a UI panel is
 /// open: native webviews layer above the UI, so they would cover
-/// the panel. Hiding is not destroying; sessions stay alive.
+/// the panel. Hiding is not destroying; sessions stay alive. When
+/// the panels close, the layout is restored the way switch_service
+/// leaves it: the active service at its bounds, the rest parked
+/// off-screen (see park_webview).
 #[tauri::command]
 fn set_services_visible(app: tauri::AppHandle, state: State<'_, AppState>, visible: bool) {
     let active = state.active.lock().unwrap().clone();
     let link_open = *state.link_open.lock().unwrap();
+    // Bounds for bringing the active service back when panels close.
+    let bounds = app.get_window("main").map(|w| service_bounds(&w));
     for wv in app.webviews().values() {
         if wv.label().starts_with("service-") {
-            // "visible" means "panels closed": bring back only the active
-            // service, never the whole stack — and while the link popup
-            // is open, the services stay hidden behind it.
+            // "visible" means "panels closed": restore the layout,
+            // never the whole stack at once — and while the link
+            // popup is open, the services stay hidden behind it.
             if visible && !link_open && active.as_deref() == Some(wv.label()) {
+                if let Some((pos, size)) = bounds {
+                    let _ = wv.set_position(pos);
+                    let _ = wv.set_size(size);
+                }
                 let _ = wv.show();
+            } else if visible && !link_open {
+                park_webview(wv);
             } else {
                 let _ = wv.hide();
             }
@@ -1041,6 +1074,7 @@ pub fn run() {
                 let app = window.app_handle();
                 let (ui_pos, ui_size) = full_bounds(window);
                 let (pos, size) = service_bounds(window);
+                let active = app.state::<AppState>().active.lock().unwrap().clone();
                 for wv in app.webviews().values() {
                     if wv.label() == UI_LABEL {
                         let _ = wv.set_position(ui_pos);
@@ -1050,7 +1084,13 @@ pub fn run() {
                         let _ = wv.set_position(ppos);
                         let _ = wv.set_size(psize);
                     } else if wv.label().starts_with("service-") {
-                        let _ = wv.set_position(pos);
+                        // Only the active service follows the bounds.
+                        // Parked webviews keep their off-screen
+                        // position; just track the new size so they
+                        // are already correct when activated.
+                        if active.as_deref() == Some(wv.label()) {
+                            let _ = wv.set_position(pos);
+                        }
                         let _ = wv.set_size(size);
                     }
                 }
