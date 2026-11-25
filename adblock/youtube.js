@@ -1,4 +1,4 @@
-// Sodium — YouTube adblock (script version 1.0.0, see manifest.json)
+// Sodium — YouTube adblock (script version 1.1.0, see manifest.json)
 //
 // Maintained in the Sodium repo (adblock/youtube.js) so it can be
 // updated independently of app releases: Sodium periodically
@@ -7,7 +7,11 @@
 // the app is the fallback until a download succeeds.
 //
 // What it does: hides ad slots with CSS and, for in-stream ads,
-// clicks the skip button or fast-forwards the ad video to its end.
+// plays the ad muted at 16x speed (and clicks the skip button the
+// moment it appears) until the ad ends, then restores the video's
+// own speed and mute state. Seeking to the end of the ad is only a
+// bonus attempt: YouTube's ad player reverts seeks, so playback
+// rate is the strategy that actually finishes ads.
 // It only ever runs on youtube.com hosts (Sodium checks before
 // injecting; the script checks again here). Not 100% by design:
 // some YouTube ads are served from the same domains as the video
@@ -44,25 +48,49 @@
     } catch (e) { /* page not ready yet; the observer retries */ }
   }
 
+  // State of the video before the current ad break started, saved
+  // once per break so the content's own speed/mute can be restored
+  // when the break ends. null while no ad is showing.
+  var adState = null;
+
   function skipAds() {
     try {
+      var player = document.querySelector(".html5-video-player");
+      var video = player ? player.querySelector("video") : null;
+      var adShowing = !!(player && player.classList.contains("ad-showing"));
+
+      if (!adShowing) {
+        // Ad break over (or never started): hand the video back
+        // exactly as it was before the break.
+        if (adState) {
+          if (video) {
+            try { video.playbackRate = adState.rate; } catch (e) {}
+            try { video.muted = adState.muted; } catch (e) {}
+          }
+          adState = null;
+        }
+        return;
+      }
+
+      if (!video) return;
+
+      // First tick of a new break: remember the content's state.
+      if (!adState) {
+        adState = { muted: !!video.muted, rate: video.playbackRate || 1 };
+      }
+
       var skip = document.querySelector(
         ".ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-skip-ad-button-modern, .ytp-ad-skip-button-container button"
       );
-      if (skip) { skip.click(); return; }
-      var player = document.querySelector(".html5-video-player");
-      if (player && player.classList.contains("ad-showing")) {
-        var video = player.querySelector("video");
-        if (video) {
-          try { video.muted = true; } catch (e) {}
-          if (isFinite(video.duration) && video.duration > 0) {
-            // Jump to the end: YouTube then treats the ad as done
-            // and moves on to the video (or the next ad).
-            try { video.currentTime = video.duration; } catch (e) {}
-          } else {
-            try { video.playbackRate = 16; } catch (e) {}
-          }
-        }
+      if (skip) { try { skip.click(); } catch (e) {} return; }
+
+      // Main strategy: race through the ad muted at 16x. (Seeking
+      // to the end does not work on its own — the ad player reverts
+      // it — but it is kept as a bonus attempt below.)
+      try { video.muted = true; } catch (e) {}
+      try { video.playbackRate = 16; } catch (e) {}
+      if (isFinite(video.duration) && video.duration > 0) {
+        try { video.currentTime = video.duration; } catch (e) {}
       }
     } catch (e) { /* never break the page */ }
   }
