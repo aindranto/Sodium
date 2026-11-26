@@ -54,6 +54,10 @@ struct AppState {
     /// True once the tray icon exists; only then may closing the
     /// window mean hiding it (otherwise the app would be stranded).
     tray_ok: std::sync::atomic::AtomicBool,
+    /// True once a graceful shutdown has begun: further exit
+    /// requests are no longer intercepted, so the exit scheduled by
+    /// begin_graceful_shutdown can actually proceed.
+    shutting_down: std::sync::atomic::AtomicBool,
     /// The active YouTube adblock script: the newest copy the UI
     /// downloaded from the repo, or the bundled fallback. Injected
     /// into YouTube service webviews when they are created.
@@ -428,6 +432,38 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// Graceful shutdown: close every service webview (and the link
+/// popup) first so WebView2 gets a chance to flush its on-disk
+/// profiles, wait a moment, then exit. Without this the process
+/// dies wherever it happens to be — worst case Windows kills it at
+/// shutdown while the window is only hidden in the tray — and a
+/// half-written profile is left behind. WhatsApp's session lives
+/// across several stores, so the mixed old/new state a hard kill
+/// leaves behind makes it reject the session on the next run and
+/// demand a fresh QR scan.
+fn begin_graceful_shutdown(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    if state
+        .shutting_down
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        return;
+    }
+    for wv in app.webviews().values() {
+        if wv.label().starts_with("service-") || wv.label() == POPUP_LABEL {
+            let _ = wv.close();
+        }
+    }
+    // Give WebView2 a window to flush the profiles it just closed
+    // before the process goes away; ~1.2 s still fits inside the
+    // grace Windows grants apps while the machine shuts down.
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1200));
+        handle.exit(0);
+    });
+}
+
 /// System tray icon: left-click brings the window back, the menu
 /// offers Buka/Keluar. Quitting only happens from that menu —
 /// closing the window hides it instead (see on_window_event).
@@ -443,7 +479,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "tray-open" => show_main_window(app),
-            "tray-quit" => app.exit(0),
+            "tray-quit" => begin_graceful_shutdown(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -1096,8 +1132,26 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Sodium");
+        .build(tauri::generate_context!())
+        .expect("error while building Sodium")
+        .run(|app, event| {
+            // Intercept exit requests (Windows shutdown/logoff and
+            // any app.exit land here): hold the exit until the
+            // service webviews have been closed gracefully, so
+            // their profiles are flushed — see
+            // begin_graceful_shutdown. Once a graceful shutdown is
+            // under way, let its scheduled exit proceed untouched.
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                let state = app.state::<AppState>();
+                if !state
+                    .shutting_down
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    api.prevent_exit();
+                    begin_graceful_shutdown(app);
+                }
+            }
+        });
 }
 
 #[cfg(test)]

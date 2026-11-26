@@ -88,3 +88,18 @@ Angka layanan aktif per halaman adalah sifat web app-nya sendiri (WhatsApp Web d
   tersisa untuk panel modal UI dan popup link. Resize jendela hanya
   memperbarui ukuran webview terparkir, posisinya tidak ditarik
   kembali ke layar.
+
+## 8. Catatan v0.8.3 (26 Nov 2026)
+
+- **Keluar anggun (graceful shutdown)**: semua jalur keluar — menu
+  tray "Keluar", shutdown/logoff Windows, dan app.exit lain —
+  sekarang menutup semua webview layanan + popup link lebih dulu,
+  memberi jeda ±1,2 detik agar WebView2 sempat men-flush profil ke
+  disk, baru proses mati. Alasan: pola pakai Agung hanya menutup
+  jendela (aplikasi bersembunyi ke tray, tetap jalan) lalu mematikan
+  laptop, sehingga proses terbunuh paksa; sesi WhatsApp yang
+  tersimpan lintas database tertinggal sebagai state campur dan
+  ditolak WA pada run berikutnya (sudah keluar sejak pertama
+  dibuka). Jeda ±1,2 detik dipilih agar tetap muat dalam tenggang
+  yang Windows berikan saat shutdown. Perilaku tutup jendela
+  (sembunyi ke tray) tidak berubah sama sekali.
