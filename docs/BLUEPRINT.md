@@ -103,3 +103,31 @@ Angka layanan aktif per halaman adalah sifat web app-nya sendiri (WhatsApp Web d
   dibuka). Jeda ±1,2 detik dipilih agar tetap muat dalam tenggang
   yang Windows berikan saat shutdown. Perilaku tutup jendela
   (sembunyi ke tray) tidak berubah sama sekali.
+
+## 9. Catatan v0.8.4 (27 Nov 2026)
+
+- **Izin notifikasi akhirnya benar-benar berlaku di webview
+  layanan.** Temuan: Shopee Seller Chat menampilkan banner
+  "browser memblokir notifikasi" di dalam Sodium. Penyebabnya,
+  handler `on_permission_request` yang menjawab Allow untuk
+  notifikasi selama ini terdaftar satu kali di level
+  `tauri::Builder` aplikasi — handler itu tidak menjangkau webview
+  layanan yang dibuat saat runtime (`create_service_webview` tidak
+  membawa handler izin sama sekali), dan default WebView2 untuk
+  permintaan yang tak terjawab adalah Deny. Perbaikan: handler
+  izin kini dipasang langsung di builder setiap webview layanan;
+  handler level aplikasi dibiarkan apa adanya (webview UI dsb.),
+  webview popup link tidak diubah.
+- **Pengaturan Notifikasi per layanan**: di dialog edit layanan
+  ada pilihan Izinkan / Ikuti bawaan / Tolak (field `notif` di
+  objek layanan; tidak ada field = Izinkan). Frontend
+  menyinkronkannya ke Rust lewat command baru `set_service_notif`
+  — saat startup untuk semua layanan dan setiap kali dialog edit
+  disimpan — dan handler membaca peta kebijakan itu pada setiap
+  permintaan, jadi perubahan juga berlaku untuk webview yang
+  sudah hidup. WebView2 tidak punya panel site-settings ala
+  Chrome, jadi kontrol ini memang harus disediakan Sodium.
+- Perilaku notifikasi lain tidak berubah: notifikasi layanan
+  tetap tampil sebagai toast Windows dari layanannya sendiri
+  (perilaku v0.1.1); yang diperbaiki hanya izinnya, ditambah
+  kontrol per layanan ini.

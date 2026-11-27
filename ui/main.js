@@ -124,6 +124,19 @@ function groupOf(s) {
   return (s && s.group ? String(s.group) : "").trim();
 }
 
+// A service's notification permission mode: "allow" (also when
+// the field is absent), "default" (leave the request to WebView2)
+// or "deny". The answer itself is given by Rust's permission
+// handler on the service webview, so the mode is mirrored there
+// with set_service_notif — at startup for every service, and
+// whenever the edit dialog saves.
+function notifModeOf(s) {
+  return s && (s.notif === "default" || s.notif === "deny") ? s.notif : "allow";
+}
+function pushNotifPolicy(s) {
+  invoke("set_service_notif", { id: s.id, mode: notifModeOf(s) }).catch(() => {});
+}
+
 // One-time migrations for services stored by older versions: adopt
 // the catalog colour when missing, adopt the real brand logo (or the
 // catalog glyph) when the service's URL matches a catalog entry and
@@ -672,6 +685,7 @@ function duplicateService(srcSvc) {
   const copy = { ...srcSvc, id: srcSvc.id + "-d" + Date.now().toString(36), name: base + " " + n };
   services.push(copy);
   store.save(services);
+  pushNotifPolicy(copy);
   render();
   return copy;
 }
@@ -740,6 +754,7 @@ async function openEditDialog(s) {
   el("editGroup").value = s.group || "";
   el("editPin").checked = pinned.has(s.id);
   el("editDisabled").checked = disabled.has(s.id);
+  el("editNotif").value = notifModeOf(s);
   el("editIconMsg").textContent = "";
   el("editAdblockBtn").hidden = !isYouTubeService(s);
   refreshGroupDatalist();
@@ -935,6 +950,10 @@ el("editSave").addEventListener("click", async () => {
   s.name = name;
   const grp = el("editGroup").value.trim();
   if (grp) s.group = grp; else delete s.group;
+  // Notification mode: only non-default values are stored, like
+  // the group above; "allow" is the absence of the field.
+  const wantNotif = el("editNotif").value;
+  if (wantNotif === "default" || wantNotif === "deny") s.notif = wantNotif; else delete s.notif;
 
   // Icon draft: the chosen mode clears whatever it overrides, so
   // the explicit choice always wins over the brand logo.
@@ -961,6 +980,7 @@ el("editSave").addEventListener("click", async () => {
   editId = null; editDraft = null;
   store.save(services);
   if (wantPin !== pinned.has(s.id)) togglePin(s);
+  pushNotifPolicy(s);
   render();
 
   if (urlChanged) {
@@ -1754,6 +1774,7 @@ async function importConfig() {
   // Push the restored settings into Rust.
   invoke("set_max_alive", { max: Number(localStorage.getItem("sodium.maxAlive") || "1") });
   for (const id of pinned) invoke("set_pinned", { id, pinned: true });
+  for (const s of services) pushNotifPolicy(s);
   for (const id of oldPinned) {
     if (!pinned.has(id)) invoke("set_pinned", { id, pinned: false });
   }
@@ -1857,6 +1878,11 @@ async function init() {
 
   // Restore pinned flags into the Rust side on startup
   for (const id of pinned) invoke("set_pinned", { id, pinned: true });
+
+  // Notification policies go to Rust too, before any service
+  // webview is created below: the permission handler on each
+  // webview reads them on every request.
+  for (const s of services) pushNotifPolicy(s);
   render();
 
   // One-time favicon fetch for services that still have no icon image

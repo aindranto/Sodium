@@ -37,6 +37,13 @@ struct AppState {
     /// 1.0 = 100%). Each service remembers its own zoom; services without
     /// an entry use 100%.
     zoom: Mutex<HashMap<String, f64>>,
+    /// Per-service notification permission policy (service id ->
+    /// "allow" | "default" | "deny"), pushed by the UI at startup
+    /// and whenever a service's setting changes. Services without
+    /// an entry are treated as "allow". Read on every permission
+    /// request by the handler on the service webview itself (see
+    /// create_service_webview).
+    notif_policy: Mutex<HashMap<String, String>>,
     /// Label of the service webview currently shown. Alive service
     /// webviews are stacked native controls, so exactly one may
     /// occupy the service area at a time: this one. The rest are
@@ -340,7 +347,9 @@ fn create_service_webview(
     // tell the UI instead: it shows the link popup over the service.
     let app_for_links = app.clone();
     let app_for_title = app.clone();
+    let app_for_perm = app.clone();
     let id_for_title = id.to_string();
+    let id_for_perm = id.to_string();
     let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed.clone()))
         .data_directory(data_dir)
         // Tauri's own drop handler replaces WebView2's on Windows,
@@ -363,6 +372,26 @@ fn create_service_webview(
                 "unread-changed",
                 (id_for_title.clone(), count),
             );
+        })
+        // Notification permission is answered HERE, on the service
+        // webview itself. The app-level handler on the Builder does
+        // not reach webviews created at runtime, so service pages
+        // were silently denied by WebView2's unanswered-request
+        // default (Shopee Seller Chat showed a "browser is blocking
+        // notifications" banner). The per-service policy comes from
+        // AppState (UI setting, see set_service_notif); no entry
+        // means "allow", the historical intent.
+        .on_permission_request(move |_, kind| match kind {
+            PermissionKind::Notifications => {
+                let state = app_for_perm.state::<AppState>();
+                let policy = state.notif_policy.lock().unwrap();
+                match policy.get(&id_for_perm).map(String::as_str) {
+                    Some("default") => PermissionResponse::Default,
+                    Some("deny") => PermissionResponse::Deny,
+                    _ => PermissionResponse::Allow,
+                }
+            }
+            _ => PermissionResponse::Default,
         });
     // YouTube adblock: YouTube services get the adblock script as an
     // initialization script (it runs before the page's own scripts).
@@ -865,6 +894,21 @@ fn set_service_zoom(app: tauri::AppHandle, state: State<'_, AppState>, id: Strin
     }
 }
 
+/// Set one service's notification permission policy: "allow"
+/// (answer Allow), "default" (leave the request to WebView2) or
+/// "deny". Unknown values fall back to "allow", the historical
+/// behaviour. The service webview's permission handler reads this
+/// map on every request, so the change also reaches webviews that
+/// are already alive.
+#[tauri::command]
+fn set_service_notif(state: State<'_, AppState>, id: String, mode: String) {
+    let mode = match mode.as_str() {
+        "default" | "deny" => mode,
+        _ => "allow".to_string(),
+    };
+    state.notif_policy.lock().unwrap().insert(id, mode);
+}
+
 #[tauri::command]
 fn alive_services(state: State<'_, AppState>) -> Vec<String> {
     state.alive_mru.lock().unwrap().clone()
@@ -1054,6 +1098,7 @@ pub fn run() {
             set_pinned,
             set_max_alive,
             set_service_zoom,
+            set_service_notif,
             open_link_popup,
             close_link_popup,
             open_external,

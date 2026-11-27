@@ -219,6 +219,13 @@
       <div class="editToggles">
         <label class="mgSetItem"><input type="checkbox" id="editPin"/><span>Pin (tetap hidup buat notif)</span></label>
         <label class="mgSetItem"><input type="checkbox" id="editDisabled"/><span>Nonaktifkan sementara</span></label>
+        <label class="mgSetItem"><span>Notifikasi</span>
+          <select id="editNotif" aria-label="Izin notifikasi layanan ini">
+            <option value="allow">Izinkan</option>
+            <option value="default">Ikuti bawaan</option>
+            <option value="deny">Tolak</option>
+          </select>
+        </label>
       </div>
       <button id="editAdblockBtn" class="btnGhost" hidden>Adblock YouTube</button>
     </div>
