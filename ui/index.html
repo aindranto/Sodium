@@ -16,10 +16,10 @@
   <header id="topbar">
     <div class="topLeft">
       <button id="reloadBtn" class="toolBtn" title="Muat ulang layanan aktif" aria-label="Muat ulang layanan aktif"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button>
-      <button id="notifBtn" class="toolBtn" title="Notifikasi" aria-label="Pengaturan notifikasi layanan aktif" aria-haspopup="true" hidden></button>
+      <button id="notifBtn" class="toolBtn" title="Notifikasi" aria-label="Pengaturan notifikasi layanan aktif" aria-haspopup="menu" hidden></button>
       <div id="activeName">Sodium</div>
     </div>
-    <div id="toast" hidden></div>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
     <div class="topTools">
       <div class="zoomCtl" title="Zoom tampilan layanan">
         <button id="zoomOut" title="Zoom out" aria-label="Perkecil zoom">−</button>
@@ -36,7 +36,7 @@
           <option value="0">∞</option>
         </select>
       </label>
-      <span id="dlPill" hidden></span>
+      <span id="dlPill" role="status" aria-live="polite" hidden></span>
       <button id="dlBtn" class="toolBtn" title="Riwayat unduhan" aria-label="Riwayat unduhan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m6.5 10.5 5.5 5.5 5.5-5.5"/><path d="M4.5 20h15"/></svg></button>
       <button id="updateBtn" class="toolBtn wide" title="Periksa update Sodium">Cek update<span id="updateDot" class="updateDot" hidden></span></button>
       <span id="appVersion" class="appVersion"></span>
@@ -79,20 +79,21 @@
   <div id="scrim" hidden></div>
   <div id="pickerPanel" class="picker" hidden>
     <div class="pickerHead">
-      <h3>Pilih layanan</h3>
-      <input id="pickerSearch" placeholder="Cari layanan..." aria-label="Cari layanan"/>
+      <h2>Pilih layanan</h2>
+      <input id="pickerSearch" placeholder="Cari layanan…" aria-label="Cari layanan"/>
     </div>
     <div id="pickerGrid" class="pickerGrid"></div>
     <div class="pickerCustom">
-      <h4>Atau tambah custom URL</h4>
+      <h3>Atau tambah custom URL</h3>
       <div class="customRow">
         <input id="cName" placeholder="Nama, mis. WhatsApp 2" aria-label="Nama layanan"/>
-        <input id="cUrl" placeholder="https://..." aria-label="Alamat URL layanan"/>
+        <input id="cUrl" type="url" spellcheck="false" placeholder="https://…" aria-label="Alamat URL layanan"/>
         <button id="cUploadBtn" class="btnGhost" title="Upload gambar ikon (.jpg / .jpeg / .png / .ico)">Upload ikon</button>
-        <img id="cIconPreview" class="iconPreview" title="Klik untuk membatalkan gambar" hidden/>
+        <img id="cIconPreview" class="iconPreview" title="Klik untuk membatalkan gambar" alt="Pratinjau ikon layanan" tabindex="0" role="button" aria-label="Batalkan gambar ikon" hidden/>
         <input id="cIconFile" type="file" accept=".jpg,.jpeg,.png,.ico,image/jpeg,image/png,image/x-icon" hidden/>
         <button id="customAdd" class="btnPrimary">Tambah custom</button>
       </div>
+      <p id="customErr" class="mgWarn" hidden></p>
       <div id="customGlyphs" class="glyphGrid"></div>
     </div>
     <div class="pickerFoot">
@@ -101,7 +102,7 @@
   </div>
 
 <div id="ctxPanel" class="picker" hidden>
-    <h3 id="ctxTitle">Layanan</h3>
+    <h2 id="ctxTitle">Layanan</h2>
     <div class="panelBtns col">
       <button id="ctxPin" class="btnPrimary">Pin (tetap hidup buat notif)</button>
       <button id="ctxDisable" class="btnGhost">Nonaktifkan layanan</button>
@@ -110,16 +111,16 @@
     </div>
   </div>
 
-  <div id="notifMenu" class="popMenu" hidden>
+  <div id="notifMenu" class="popMenu" role="menu" aria-label="Notifikasi layanan ini" hidden>
     <div class="popTitle">Notifikasi layanan ini</div>
-    <button class="popItem" data-notif-mode="allow"><span class="popDot"></span>Izinkan</button>
-    <button class="popItem" data-notif-mode="default"><span class="popDot"></span>Ikuti bawaan</button>
-    <button class="popItem" data-notif-mode="deny"><span class="popDot"></span>Tolak</button>
+    <button class="popItem" role="menuitemradio" aria-checked="false" data-notif-mode="allow"><span class="popDot"></span>Izinkan</button>
+    <button class="popItem" role="menuitemradio" aria-checked="false" data-notif-mode="default"><span class="popDot"></span>Ikuti bawaan</button>
+    <button class="popItem" role="menuitemradio" aria-checked="false" data-notif-mode="deny"><span class="popDot"></span>Tolak</button>
   </div>
 
   <div id="managePanel" class="picker" hidden>
     <div class="pickerHead">
-      <h3>Kelola layanan</h3>
+      <h2>Kelola layanan</h2>
       <button id="manageAdd" class="btnPrimary">Tambah layanan</button>
     </div>
     <div class="mgSettings">
@@ -142,7 +143,7 @@
 
   <div id="dlPanel" class="picker" hidden>
     <div class="pickerHead">
-      <h3>Unduhan</h3>
+      <h2>Unduhan</h2>
     </div>
     <div id="dlList" class="manageList"></div>
     <div class="pickerFoot">
@@ -152,7 +153,7 @@
 
   <div id="updatePanel" class="picker" hidden>
     <div class="pickerHead">
-      <h3 id="updateTitle">Update tersedia</h3>
+      <h2 id="updateTitle">Update tersedia</h2>
     </div>
     <div id="updateBody" class="updateBody"></div>
     <div class="pickerFoot">
@@ -165,14 +166,14 @@
 
   <div id="quickPanel" class="picker" hidden>
     <div class="pickerHead">
-      <h3>Ganti layanan</h3>
-      <input id="quickSearch" placeholder="Ketik nama layanan..." aria-label="Cari layanan"/>
+      <h2>Ganti layanan</h2>
+      <input id="quickSearch" placeholder="Ketik nama layanan…" aria-label="Cari layanan" role="combobox" aria-expanded="true" aria-controls="quickList" aria-autocomplete="list"/>
     </div>
-    <div id="quickList"></div>
+    <div id="quickList" role="listbox" aria-label="Daftar layanan"></div>
   </div>
 
   <div id="groupPanel" class="picker" hidden>
-    <h3 id="groupTitle">Kelompok</h3>
+    <h2 id="groupTitle">Kelompok</h2>
     <p class="muted">Hidupkan semua layanan dalam kelompok ini sekaligus. Batas "Hidup bareng" tetap berlaku seperti biasa.</p>
     <div class="pickerFoot">
       <button id="groupCancel" class="btnGhost">Batal</button>
@@ -182,15 +183,16 @@
 
   <div id="editPanel" class="picker" hidden>
     <div class="pickerHead">
-      <h3>Edit layanan</h3>
+      <h2>Edit layanan</h2>
       <span id="editPreview" class="tileIcon"></span>
     </div>
     <div class="editScroll">
       <div class="mgFormGrid">
         <label>Nama layanan <input id="editName" maxlength="40"/></label>
-        <label>URL <input id="editUrl" spellcheck="false"/></label>
+        <label>URL <input id="editUrl" type="url" spellcheck="false"/></label>
         <label>Kelompok <input id="editGroup" maxlength="30" list="groupNames" placeholder="mis. Kerja (boleh kosong)"/></label>
       </div>
+      <p id="editErr" class="mgWarn" hidden></p>
       <p id="editWarn" class="mgWarn" hidden></p>
       <div class="editSection">
         <div class="editSecLabel">Ikon</div>
@@ -203,7 +205,7 @@
         <div id="glyphGrid" class="glyphGrid"></div>
         <input id="editIconText" maxlength="2" placeholder="Inisial, mis. WA" aria-label="Teks ikon, 1 sampai 2 huruf"/>
         <div class="imgRow">
-          <img id="editImgPreview" class="iconPreview" hidden/>
+          <img id="editImgPreview" class="iconPreview" alt="Pratinjau ikon layanan" hidden/>
           <button id="editUploadBtn" class="btnGhost">Upload gambar (.jpg / .png / .ico)</button>
           <button id="editRemoveImg" class="btnDanger" hidden>Hapus gambar</button>
           <input id="editIconFile" type="file" accept=".jpg,.jpeg,.png,.ico,image/jpeg,image/png,image/x-icon" hidden/>
@@ -246,7 +248,7 @@
 
   <div id="adblockPanel" class="picker" hidden>
     <div class="pickerHead">
-      <h3>Adblock YouTube</h3>
+      <h2>Adblock YouTube</h2>
     </div>
     <div class="editScroll">
       <label class="mgSetItem adblockToggleRow"><input type="checkbox" id="adblockToggle"/><span>Adblock aktif untuk layanan YouTube</span></label>
@@ -264,7 +266,7 @@
 
   <div id="confirmPanel" class="picker" hidden>
     <div class="pickerHead">
-      <h3 id="confirmTitle">Hapus layanan</h3>
+      <h2 id="confirmTitle">Hapus layanan</h2>
     </div>
     <p id="confirmBody" class="confirmBody"></p>
     <div class="pickerFoot">

@@ -8,19 +8,20 @@
   --danger-bg:rgba(229,72,77,.14); --danger-bg-hover:rgba(229,72,77,.2);
   --danger-text:#f09399; --badge:#e5484d;
   --shadow:0 12px 40px rgba(0,0,0,.5);
+  --ease-out:cubic-bezier(0.23,1,0.32,1);
+  --ease-in-out:cubic-bezier(0.77,0,0.175,1);
   --svc:48px; --svc-sm:28px}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
 #sidebar{position:fixed;left:0;top:0;bottom:0;width:76px;background:var(--chrome);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:8px;z-index:10}
-#activePill{position:absolute;left:3px;top:0;width:4px;height:24px;border-radius:2px;background:var(--accent);transition:transform .18s ease,opacity .15s ease;z-index:11;pointer-events:none}
-#services{display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1}
+#activePill{position:absolute;left:3px;top:0;width:4px;height:24px;border-radius:2px;background:var(--accent);transition:transform .18s var(--ease-in-out),opacity .15s ease;z-index:11;pointer-events:none}
+#services{display:flex;flex-direction:column;gap:8px;overflow-y:auto;overscroll-behavior:contain;flex:1}
 .svc{width:var(--svc);height:var(--svc);border-radius:14px;border:2px solid transparent;background:var(--raised);color:var(--text);font-size:calc(var(--svc)*.375);font-weight:700;cursor:pointer;position:relative;overflow:hidden;padding:0}
 .svc:hover{background:var(--hover)}
 .svc.active{background:var(--hover)}
 .svc .pin{position:absolute;top:3px;left:3px;width:8px;height:8px;border-radius:50%;background:var(--accent);z-index:2}
-.svc .badge{position:absolute;top:1px;right:1px;min-width:17px;height:17px;border-radius:9px;background:var(--badge);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;z-index:2}
-.svc .badge.pop{animation:badgePop .15s ease-out}
-@keyframes badgePop{40%{transform:scale(1.25)}}
+.svc .badge{position:absolute;top:1px;right:1px;min-width:17px;height:17px;border-radius:9px;background:var(--badge);color:#fff;font-size:10px;font-weight:700;font-variant-numeric:tabular-nums;display:flex;align-items:center;justify-content:center;padding:0 4px;z-index:2;transition:transform .15s var(--ease-out)}
+.svc .badge.pop{transform:scale(1.25)}
 .svcImg{width:100%;height:100%;object-fit:cover;display:block}
 .svc.disabled{filter:grayscale(1);opacity:.4}
 .svc.disabled:hover{background:var(--raised)}
@@ -36,7 +37,7 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .mgSettings{display:flex;flex-wrap:wrap;gap:8px 24px;padding:12px 0;border-bottom:1px solid var(--border);margin-bottom:12px}
 .mgSetItem{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer}
 .mgSetItem select{background:var(--raised);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;padding:4px 6px;font-size:12px}
-.manageList{overflow-y:auto;margin:0 0 16px;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding-right:4px}
+.manageList{overflow-y:auto;overscroll-behavior:contain;margin:0 0 16px;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding-right:4px}
 .mgRow{display:grid;grid-template-columns:20px 36px 1fr auto auto;gap:12px;align-items:center;background:var(--raised);border:1px solid var(--border-strong);border-radius:12px;padding:10px 12px}
 .mgRow.off{opacity:.6}
 .mgRow.dragging{position:relative;z-index:5;box-shadow:0 10px 24px rgba(0,0,0,.45);transition:none}
@@ -82,7 +83,7 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .zoomCtl{display:flex;align-items:center;gap:4px}
 .zoomCtl button{background:var(--raised);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;min-width:30px;height:28px;font-weight:600;cursor:pointer}
 .zoomCtl button:hover{background:var(--hover)}
-#zoomLabel{min-width:54px;font-size:12px}
+#zoomLabel{min-width:54px;font-size:12px;font-variant-numeric:tabular-nums}
 .topAlive{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
 #linkBar{position:fixed;left:76px;right:0;top:44px;height:40px;background:var(--panel);border-bottom:1px solid var(--border-strong);display:flex;align-items:center;gap:12px;padding:0 12px;z-index:9}
 #linkBar[hidden]{display:none}
@@ -92,7 +93,7 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .linkBtns button:hover{background:var(--hover)}
 #toast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,42vw);background:var(--raised);border:1px solid var(--border-strong);border-radius:99px;padding:4px 14px;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
 #toast[hidden]{display:none}
-#toast:not([hidden]){animation:toastIn .15s ease-out}
+#toast:not([hidden]){animation:toastIn .15s var(--ease-out)}
 @keyframes toastIn{from{opacity:0;transform:translate(-50%,-50%) translateY(-4px)}to{opacity:1;transform:translate(-50%,-50%) translateY(0)}}
 .toolBtn{display:flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 6px;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--muted);cursor:pointer}
 .toolBtn:hover{background:var(--raised);color:var(--text)}
@@ -100,21 +101,21 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .topLeft #notifBtn{flex:none}
 #notifBtn[hidden]{display:none}
 #notifBtn.notifDim{opacity:.55}
-#dlPill{background:var(--raised);border:1px solid var(--accent);border-radius:99px;padding:3px 12px;font-size:12px;color:var(--accent);white-space:nowrap}
+#dlPill{background:var(--raised);border:1px solid var(--accent);border-radius:99px;padding:3px 12px;font-size:12px;font-variant-numeric:tabular-nums;color:var(--accent);white-space:nowrap}
 #dlPill[hidden]{display:none}
-#dlPill:not([hidden]){animation:dropIn .15s ease-out}
+#dlPill:not([hidden]){animation:dropIn .15s var(--ease-out)}
 @keyframes dropIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 .dlRow{display:flex;gap:10px;align-items:center;background:var(--raised);border:1px solid var(--border-strong);border-radius:12px;padding:10px}
 .dlInfo{flex:1;min-width:0}
 .dlName{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dlMeta{font-size:11px;color:var(--muted);margin-top:2px}
 .dlEmpty{font-size:13px;color:var(--muted);padding:8px 0}
-.updateBody{white-space:pre-wrap;font-size:13px;line-height:1.5;color:var(--text-2);overflow-y:auto;max-height:300px}
+.updateBody{white-space:pre-wrap;font-size:13px;line-height:1.5;color:var(--text-2);overflow-y:auto;overscroll-behavior:contain;max-height:300px}
 #welcome{margin-left:76px;margin-top:44px;min-height:calc(100vh - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:48px 24px}
 #welcome h1{font-size:36px;margin:0 0 10px}
 .tagline{color:var(--muted);font-size:16px;line-height:1.55;margin:0;max-width:520px}
 .featureCards{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin:30px 0 6px;max-width:780px}
-.fCard{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px;text-align:left;width:238px;animation:fadeUp .3s ease-out both}
+.fCard{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px;text-align:left;width:238px;animation:fadeUp .3s var(--ease-out) both}
 .fCard:nth-child(2){animation-delay:.04s}
 .fCard:nth-child(3){animation-delay:.08s}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -124,9 +125,9 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .welcomeHint{margin-top:22px;font-size:12.5px}
 .muted{color:var(--muted);line-height:1.55}
 .panel{position:fixed;left:92px;top:56px;width:320px;background:var(--panel);color:var(--text);border:1px solid var(--border-strong);border-radius:14px;padding:20px;z-index:30;box-shadow:var(--shadow)}
-.panel:not([hidden]){animation:panelInFlat .14s ease-out}
+.panel:not([hidden]){animation:panelInFlat .16s var(--ease-out)}
 @keyframes panelInFlat{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-.panel h3{margin:0 0 6px;font-weight:600}
+.panel h2{margin:0 0 6px;font-weight:600}
 .panel label{display:block;margin:12px 0;font-size:13px;color:var(--muted)}
 .panel input{display:block;width:100%;margin-top:4px;padding:9px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text)}
 .panelBtns{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
@@ -146,17 +147,18 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .pickerEmpty{grid-column:1/-1;color:var(--muted);font-size:13px;padding:18px 4px;line-height:1.5}
 
 .picker{position:fixed;left:calc(76px + (100vw - 76px)/2);top:calc(44px + (100vh - 44px)/2);transform:translate(-50%,-50%);width:min(620px,calc(100vw - 108px));max-height:min(640px,calc(100vh - 96px));background:var(--panel);color:var(--text);border:1px solid var(--border-strong);border-radius:16px;padding:20px;z-index:30;display:flex;flex-direction:column;box-shadow:var(--shadow)}
-.picker:not([hidden]){animation:panelIn .14s ease-out}
-@keyframes panelIn{from{opacity:0;transform:translate(-50%,-50%) translateY(6px) scale(.99)}to{opacity:1;transform:translate(-50%,-50%) translateY(0) scale(1)}}
+.picker:not([hidden]){animation:panelIn .18s var(--ease-out)}
+@keyframes panelIn{from{opacity:0;transform:translate(-50%,-50%) translateY(6px) scale(.95)}to{opacity:1;transform:translate(-50%,-50%) translateY(0) scale(1)}}
 #ctxPanel{width:min(340px,calc(100vw - 108px))}
 #scrim{position:fixed;left:76px;top:44px;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:25}
 #scrim[hidden]{display:none}
-#scrim:not([hidden]){animation:fadeIn .14s ease-out}
+#scrim:not([hidden]){animation:fadeIn .14s var(--ease-out)}
 @keyframes fadeIn{from{opacity:0}}
 .appVersion{font-size:12px;color:var(--muted);white-space:nowrap}
 .picker[hidden]{display:none}
 .popMenu{position:fixed;width:208px;background:var(--panel);color:var(--text);border:1px solid var(--border-strong);border-radius:12px;padding:6px;z-index:30;display:flex;flex-direction:column;box-shadow:var(--shadow)}
-.popMenu:not([hidden]){animation:panelInFlat .14s ease-out}
+.popMenu:not([hidden]){animation:popIn .16s var(--ease-out)}
+@keyframes popIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
 .popMenu[hidden]{display:none}
 .popTitle{font-size:11px;color:var(--muted);padding:6px 10px 4px}
 .popItem{display:flex;align-items:center;gap:9px;background:transparent;border:0;color:var(--text);font:inherit;font-size:13px;text-align:left;padding:8px 10px;border-radius:8px;cursor:pointer}
@@ -164,16 +166,16 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .popDot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--muted);flex:none;box-sizing:border-box}
 .popItem.on .popDot{background:var(--accent);border-color:var(--accent)}
 .pickerHead{display:flex;gap:12px;align-items:center;justify-content:space-between}
-.pickerHead h3{margin:0;font-size:18px;font-weight:600}
+.pickerHead h2{margin:0;font-size:18px;font-weight:600}
 #pickerSearch,#quickSearch{flex:0 1 280px;padding:9px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text)}
-.pickerGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;overflow-y:auto;margin:16px 0;padding-right:4px;flex:1;min-height:0}
+.pickerGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;overflow-y:auto;overscroll-behavior:contain;margin:16px 0;padding-right:4px;flex:1;min-height:0}
 .tile{position:relative;background:var(--raised);border:2px solid transparent;border-radius:14px;padding:14px 6px 10px;color:var(--text);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px}
 .tile:hover{background:var(--hover)}
 .tileIcon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700}
 .tileName{font-size:12px;font-weight:600;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .tileBadge{position:absolute;top:6px;right:6px;font-size:10px;background:var(--bg);color:var(--muted);padding:2px 6px;border-radius:99px}
 .pickerCustom{border-top:1px solid var(--border-strong);padding-top:12px}
-.pickerCustom h4{margin:0 0 8px;font-size:13px;color:var(--muted)}
+.pickerCustom h3{margin:0 0 8px;font-size:13px;color:var(--muted)}
 .customRow{display:flex;gap:8px;flex-wrap:wrap}
 .customRow input{flex:1 1 140px;padding:9px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text)}
 .customRow button{padding:8px 14px;border-radius:8px;border:0;font-weight:600;cursor:pointer}
@@ -195,7 +197,7 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .svcSep[data-group]{cursor:context-menu}
 .svcSep[data-group]:hover{background:var(--accent)}
 #quickPanel{width:min(480px,calc(100vw - 108px))}
-#quickList{max-height:min(46vh,380px);overflow-y:auto;margin-top:14px;display:flex;flex-direction:column;gap:4px;padding-right:4px}
+#quickList{max-height:min(46vh,380px);overflow-y:auto;overscroll-behavior:contain;margin-top:14px;display:flex;flex-direction:column;gap:4px;padding-right:4px}
 .qRow{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;cursor:pointer}
 .qRow:hover{background:var(--hover)}
 .qRow.sel{background:var(--hover)}
@@ -216,13 +218,26 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 
 .svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgAct,.mgFormBtns button,.zoomCtl button,.linkBtns button,#addBtn,#manageBtn,.swatch,.glyphBtn,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
 .svc:active,.tile:active,.toolBtn:active,#addBtn:active,#manageBtn:active,.zoomCtl button:active,.linkBtns button:active,.panel button:active,.pickerFoot button:active,.mgAct:active,.mgFormBtns button:active,.customRow button:active{transform:scale(.98)}
+/* Exit states (v0.8.6): closePanels() adds .closing for one short
+   beat before [hidden] lands, so dismissal is faster than entry
+   (110ms vs 160-180ms) instead of an instant vanish. These rules
+   sit after the entrance rules on purpose: same specificity, so
+   source order decides while both match. */
+.picker.closing{animation:pickerOut .11s var(--ease-out) forwards}
+@keyframes pickerOut{from{opacity:1;transform:translate(-50%,-50%) translateY(0) scale(1)}to{opacity:0;transform:translate(-50%,-50%) translateY(4px) scale(.97)}}
+.panel.closing{animation:panelOut .11s var(--ease-out) forwards}
+@keyframes panelOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(4px)}}
+.popMenu.closing{animation:popOut .11s var(--ease-out) forwards}
+@keyframes popOut{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.96)}}
+#toast.closing{animation:toastOut .1s var(--ease-out) forwards}
+@keyframes toastOut{from{opacity:1;transform:translate(-50%,-50%) translateY(0)}to{opacity:0;transform:translate(-50%,-50%) translateY(-4px)}}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 
 #editPanel{width:min(560px,calc(100vw - 108px))}
 #adblockPanel{width:min(460px,calc(100vw - 108px))}
 #confirmPanel{width:min(400px,calc(100vw - 108px))}
 #editPreview{width:44px;height:44px;border-radius:11px;font-size:22px;flex:none}
-.editScroll{overflow-y:auto;min-height:0;flex:1;padding-right:4px;margin-top:12px}
+.editScroll{overflow-y:auto;overscroll-behavior:contain;min-height:0;flex:1;padding-right:4px;margin-top:12px}
 .editSection{margin-top:16px;border-top:1px solid var(--border);padding-top:12px}
 .editSecLabel{font-size:13px;color:var(--muted);margin-bottom:8px}
 .iconModes{display:flex;gap:6px;flex-wrap:wrap}
@@ -232,7 +247,7 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 #editIconText{margin-top:10px;width:150px;padding:9px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text);text-align:center}
 .hueRow{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:13px;color:var(--muted)}
 .hueRow input[type="range"]{flex:1;accent-color:var(--accent)}
-.hueRow .hueVal{min-width:34px;text-align:right;color:var(--text);font-weight:600}
+.hueRow .hueVal{min-width:34px;text-align:right;color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
 .hueRow button{padding:6px 10px;border-radius:8px;border:0;font-weight:600;cursor:pointer;font-size:12px}
 .editToggles{display:flex;flex-direction:column;gap:10px;margin-top:16px;border-top:1px solid var(--border);padding-top:14px}
 #editAdblockBtn{margin-top:14px;padding:8px 14px;border-radius:8px;border:0;font-weight:600;cursor:pointer}

@@ -154,3 +154,46 @@ Angka layanan aktif per halaman adalah sifat web app-nya sendiri (WhatsApp Web d
   dialog edit, hapus/nonaktifkan layanan aktif, impor config,
   dan startup. Bila tidak ada layanan aktif, tombol disembunyikan.
 - Murni frontend (`ui/`); sisi Rust tidak berubah sama sekali.
+
+## 11. Catatan v0.8.6 (27 Nov 2026)
+
+- **Poles UI dari audit guidelines pertama** yang memakai dua
+  skill adaptasi baru — `sodium_web_guidelines` (dari Vercel,
+  tersaring untuk desktop WebView2/JS polos) dan
+  `sodium_motion_design` (dari Emil Kowalski). Ke-19 temuan audit
+  atas baseline v0.8.5 dibereskan, ditambah 4 perbaikan motion.
+  Murni frontend (`ui/`); sisi Rust tidak berubah.
+- Aksesibilitas & semantik: toast dan pill unduhan ber-`aria-live`;
+  hierarki heading lurus (h1 → h2 judul panel → h3 sub-bagian);
+  menu notifikasi ber-role menu/menuitemradio dengan
+  `aria-checked` di tempat yang benar; baris quick switcher
+  ber-role option dalam listbox dengan `aria-selected` dan
+  `aria-activedescendant`; pemisah kelompok dan grip urutan
+  Kelola bisa difokuskan — kelompok dibuka lewat Enter/Spasi,
+  urutan digeser lewat panah atas/bawah pada grip; pratinjau ikon
+  custom bisa dibatalkan lewat keyboard; gambar pratinjau ber-`alt`.
+- Formulir: field URL konsisten `type="url"` + `spellcheck="false"`;
+  nama/URL kosong kini menampilkan error inline dan memfokuskan
+  field pertama (form custom dan dialog edit), bukan berhenti
+  diam-diam. Placeholder memakai "…".
+- Penjaga data: dialog edit yang kotor (ada perubahan belum
+  disimpan) meminta konfirmasi "Buang perubahan?" pada penutupan
+  implisit — klik di luar, Escape, berpindah layanan — dan Batal
+  pada konfirmasi itu mengembalikan dialog dengan draf utuh.
+  Impor konfigurasi kini meminta konfirmasi sebelum mengganti
+  seluruh konfigurasi aktif.
+- Performa & kerapian: drag Kelola mengukur geometri baris sekali
+  di awal seret (pointermove hanya menulis transform/scroll —
+  tidak ada lagi layout thrash); perubahan satu badge unread
+  memperbarui tile terkait saja, bukan render sidebar penuh;
+  area gulir ber-`overscroll-behavior: contain`; angka yang
+  berubah (badge, persen zoom, pill unduhan, nilai hue)
+  ber-`tabular-nums`.
+- Motion: token easing kustom `--ease-out` / `--ease-in-out`
+  menggantikan easing bawaan pada gerak masuk-keluar; popover
+  notifikasi tumbuh dari tombol lonceng (`scale(0.95)` +
+  `transform-origin` di pemicunya), modal masuk dari
+  `scale(0.95)`; keluar lebih cepat dari masuk (110ms vs
+  160–180ms) lewat keadaan `.closing` sebelum panel disembunyikan;
+  pop badge unread memakai transition transform (bisa retarget
+  saat angka berubah beruntun), bukan keyframe lagi.

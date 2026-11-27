@@ -201,9 +201,17 @@ const allPanels = [pickerPanel, ctxPanel, editPanel, adblockPanel, confirmPanel,
 let ctxService = null;
 
 let lastFocus = null;
+// Panels leave through a short exit beat (v0.8.6): closePanels()
+// marks the open panel .closing for ~110ms before [hidden] lands,
+// so exits are faster than entrances instead of an instant vanish.
+// panelSeq invalidates a pending close whenever a newer open or
+// close takes over mid-beat, so the timeout can never hide a panel
+// that was just (re)opened.
+let panelSeq = 0;
 async function openPanel(panel) {
+  panelSeq++;
   lastFocus = document.activeElement;
-  for (const p of allPanels) p.hidden = true;
+  for (const p of allPanels) { p.hidden = true; p.classList.remove("closing"); }
   // Only the modal popups (picker / Kelola / right-click menu,
   // class "picker") get the dimmed backdrop.
   el("scrim").hidden = !panel.classList.contains("picker");
@@ -214,7 +222,15 @@ async function openPanel(panel) {
 }
 
 async function closePanels() {
-  for (const p of allPanels) p.hidden = true;
+  const open = allPanels.filter(p => !p.hidden);
+  const seq = ++panelSeq;
+  if (open.length) {
+    for (const p of open) p.classList.add("closing");
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    await new Promise(r => setTimeout(r, reduced ? 0 : 115));
+    if (seq !== panelSeq) return; // a newer open/close took over
+    for (const p of open) { p.hidden = true; p.classList.remove("closing"); }
+  }
   el("scrim").hidden = true;
   await invoke("set_services_visible", { visible: true });
   if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
@@ -222,6 +238,9 @@ async function closePanels() {
 
 // Clicking outside an open panel (welcome area, top bar) closes it.
 // Sidebar clicks are excluded: they run their own open/switch logic.
+// Two implicit-dismiss guards: a dirty edit draft asks before it is
+// thrown away, and clicking outside the discard confirmation itself
+// counts as cancelling it (back to the edit dialog).
 document.addEventListener("click", (e) => {
   const open = allPanels.find(p => !p.hidden);
   if (!open) return;
@@ -229,6 +248,8 @@ document.addEventListener("click", (e) => {
   const path = e.composedPath ? e.composedPath() : [e.target];
   if (path.includes(open)) return;
   if (path.some(n => n && n.id === "sidebar")) return;
+  if (open === confirmPanel && confirmReturnTo) { cancelConfirm(); return; }
+  if (open === editPanel && editIsDirty()) { confirmDiscardEdit(); return; }
   closePanels();
 });
 
@@ -319,6 +340,42 @@ async function openCtx(s) {
   el("ctxPin").focus();
 }
 
+// Unread badge pop (v0.8.6): a CSS transition, not a keyframe, so
+// a burst of count changes retargets mid-flight instead of
+// restarting. The class is added, held briefly, then removed; a
+// repeat pop restarts from the current scale via a forced reflow.
+function popBadge(bd) {
+  bd.classList.remove("pop");
+  void bd.offsetWidth;
+  bd.classList.add("pop");
+  clearTimeout(bd._popTimer);
+  bd._popTimer = setTimeout(() => bd.classList.remove("pop"), 180);
+}
+
+// Local badge update for one service tile (v0.8.6): an unread
+// change touches only that tile's badge instead of re-rendering
+// the whole sidebar. Falls back to a full render if the tile is
+// not in the DOM (cannot happen in practice: counts only arrive
+// for services, and every service renders a tile).
+function updateBadge(id, popped) {
+  const btn = nav.querySelector('.svc[data-svc="' + id + '"]');
+  if (!btn) { render(); return; }
+  let bd = btn.querySelector(".badge");
+  const n = unread.get(id) || 0;
+  if (!n || disabled.has(id)) {
+    if (bd) bd.remove();
+    return;
+  }
+  if (!bd) {
+    bd = document.createElement("span");
+    bd.className = "badge";
+    btn.appendChild(bd);
+  }
+  bd.textContent = n > 99 ? "99+" : String(n);
+  if (popped) popBadge(bd);
+  if (id === popId) popId = null;
+}
+
 function render() {
   document.body.classList.toggle("showNames", showNames);
   nav.innerHTML = "";
@@ -340,12 +397,24 @@ function render() {
           e.preventDefault();
           openGroupPanel(g);
         });
+        // Keyboard alternative to the right-click above: the
+        // separator is focusable and Enter/Space (or the context
+        // menu keys) opens the same group panel.
+        sep.tabIndex = 0;
+        sep.setAttribute("role", "button");
+        sep.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " " || e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+            e.preventDefault();
+            openGroupPanel(g);
+          }
+        });
       }
       nav.appendChild(sep);
     }
     prevGroup = g;
     const b = document.createElement("button");
     b.className = "svc" + (s.id === activeId ? " active" : "") + (disabled.has(s.id) ? " disabled" : "");
+    b.dataset.svc = s.id;
     b.title = s.name + (pinned.has(s.id) ? " (pinned - tetap hidup)" : "") + (disabled.has(s.id) ? " (nonaktif, klik untuk mengaktifkan lagi)" : "");
     b.setAttribute("aria-label", b.title);
     if (s.img) {
@@ -375,9 +444,10 @@ function render() {
     const n = unread.get(s.id);
     if (n && !disabled.has(s.id)) {
       const bd = document.createElement("span");
-      bd.className = "badge" + (s.id === popId ? " pop" : "");
+      bd.className = "badge";
       bd.textContent = n > 99 ? "99+" : String(n);
       b.appendChild(bd);
+      if (s.id === popId) popBadge(bd);
     }
     b.addEventListener("click", async (e) => {
       if (disabled.has(s.id)) {
@@ -432,6 +502,9 @@ window.addEventListener("resize", () => positionPill(true));
 async function switchTo(s) {
   if (disabled.has(s.id)) return;
   if (linkPopupOpen) await closeLinkPopup();
+  // Switching away would close the panels: a dirty edit draft
+  // asks first instead of being discarded silently.
+  if (editIsDirty()) { confirmDiscardEdit(() => switchTo(s)); return; }
   if (allPanels.some(p => !p.hidden)) await closePanels();
   activeId = s.id; render();
   localStorage.setItem("sodium.lastActive", s.id); scheduleConfigSave();
@@ -592,6 +665,15 @@ function paintCustomGlyphs() {
 paintCustomGlyphs();
 el("cUploadBtn").addEventListener("click", () => el("cIconFile").click());
 el("cIconPreview").addEventListener("click", clearCustomImg);
+// The preview image is a click target (click = discard the image),
+// so it needs a keyboard path too: it carries tabindex/role in the
+// markup, and Enter/Space do what a click does.
+el("cIconPreview").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    clearCustomImg();
+  }
+});
 el("cIconFile").addEventListener("change", async (e) => {
   const f = e.target.files[0];
   e.target.value = "";
@@ -604,10 +686,17 @@ el("cIconFile").addEventListener("change", async (e) => {
     el("cIconPreview").hidden = false;
   } catch { /* unreadable file: keep the glyph / initials icon */ }
 });
+el("cName").addEventListener("input", () => { el("customErr").hidden = true; });
+el("cUrl").addEventListener("input", () => { el("customErr").hidden = true; });
 el("customAdd").addEventListener("click", async () => {
   const name = el("cName").value.trim();
   let url = el("cUrl").value.trim();
-  if (!name || !url) return;
+  // Empty name/URL used to stop silently; say what is missing,
+  // inline, and focus the first invalid field.
+  const cerr = el("customErr");
+  if (!name) { cerr.textContent = "Nama layanan wajib diisi."; cerr.hidden = false; el("cName").focus(); return; }
+  if (!url) { cerr.textContent = "URL layanan wajib diisi."; cerr.hidden = false; el("cUrl").focus(); return; }
+  cerr.hidden = true;
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
   const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + Date.now().toString(36);
   const svc = { id, name, url, icon: name.slice(0, 2) };
@@ -748,6 +837,27 @@ async function deleteService(id) {
 const COLOR_SWATCHES = ["#ffffff", "#e8eaf0", "#9aa3b5", "#14161a", "#f5c518", "#1faa55", "#229ed9", "#1877f2", "#5865f2", "#c13584", "#e60023", "#ee4d2d", "#ff4500", "#42b549", "#611f69", "#b20710"];
 let editId = null;
 let editDraft = null;
+// Snapshot of the whole edit form (fields + icon draft) taken
+// when the dialog opens. Implicit dismissals — outside click,
+// Escape, switching service — compare against it and ask before
+// discarding unsaved changes; the explicit Batal button and a
+// successful Simpan never ask.
+let editSnapshot = null;
+function editFormState() {
+  if (!editDraft) return "";
+  return JSON.stringify({
+    name: el("editName").value,
+    url: el("editUrl").value,
+    group: el("editGroup").value,
+    pin: el("editPin").checked,
+    disabled: el("editDisabled").checked,
+    notif: el("editNotif").value,
+    draft: editDraft,
+  });
+}
+function editIsDirty() {
+  return !!(editId && editDraft && editSnapshot !== null && editFormState() !== editSnapshot);
+}
 
 function catalogFor(s) {
   return CATALOG.find(c => hostOf(c.url) === hostOf(s.url)) || null;
@@ -782,11 +892,13 @@ async function openEditDialog(s) {
   el("editDisabled").checked = disabled.has(s.id);
   el("editNotif").value = notifModeOf(s);
   el("editIconMsg").textContent = "";
+  el("editErr").hidden = true;
   el("editAdblockBtn").hidden = !isYouTubeService(s);
   refreshGroupDatalist();
   paintEditWarn();
   paintEditIcon();
   await openPanel(editPanel);
+  editSnapshot = editFormState();
 }
 
 function paintEditWarn() {
@@ -953,20 +1065,27 @@ el("editAdblockBtn").addEventListener("click", async () => {
 el("editDuplicate").addEventListener("click", async () => {
   const s = services.find(x => x.id === editId);
   if (!s) return;
-  editId = null; editDraft = null;
+  editId = null; editDraft = null; editSnapshot = null;
   duplicateService(s);
   await openManage();
 });
 el("editCancel").addEventListener("click", async () => {
-  editId = null; editDraft = null;
+  editId = null; editDraft = null; editSnapshot = null;
   await openManage();
 });
+el("editName").addEventListener("input", () => { el("editErr").hidden = true; });
+el("editUrl").addEventListener("input", () => { el("editErr").hidden = true; });
 el("editSave").addEventListener("click", async () => {
   const s = services.find(x => x.id === editId);
   if (!s || !editDraft) return;
   const name = el("editName").value.trim();
   let url = el("editUrl").value.trim();
-  if (!name || !url) return;
+  // Empty name/URL used to stop silently; say what is missing,
+  // inline, and focus the first invalid field.
+  const eerr = el("editErr");
+  if (!name) { eerr.textContent = "Nama layanan wajib diisi."; eerr.hidden = false; el("editName").focus(); return; }
+  if (!url) { eerr.textContent = "URL layanan wajib diisi."; eerr.hidden = false; el("editUrl").focus(); return; }
+  eerr.hidden = true;
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
   const urlChanged = url !== s.url;
   const wasDisabled = disabled.has(s.id);
@@ -1003,7 +1122,7 @@ el("editSave").addEventListener("click", async () => {
   s.color = editDraft.color;
   s.iconColor = editDraft.iconColor;
   if (activeId === s.id) el("activeName").textContent = name;
-  editId = null; editDraft = null;
+  editId = null; editDraft = null; editSnapshot = null;
   store.save(services);
   if (wantPin !== pinned.has(s.id)) togglePin(s);
   pushNotifPolicy(s);
@@ -1029,30 +1148,60 @@ el("editSave").addEventListener("click", async () => {
 
 // ------------------------------------------------------------------
 // Small confirm dialog (used for service deletion from the Kelola
-// list): a real modal, not a two-click arm.
+// list): a real modal, not a two-click arm. `returnTo` names a
+// panel that cancelling reopens instead of closing everything —
+// the discard-changes confirmation uses it to hand the user back
+// to the edit dialog with the draft untouched.
 let confirmAction = null;
 let confirmFromManage = false;
-function openConfirm({ title, body, okLabel, onOk, fromManage }) {
+let confirmReturnTo = null;
+function openConfirm({ title, body, okLabel, onOk, fromManage, returnTo }) {
   el("confirmTitle").textContent = title;
   el("confirmBody").textContent = body;
   el("confirmOk").textContent = okLabel || "Hapus";
   confirmAction = onOk || null;
   confirmFromManage = !!fromManage;
+  confirmReturnTo = returnTo || null;
   openPanel(confirmPanel);
 }
-el("confirmCancel").addEventListener("click", async () => {
+async function cancelConfirm() {
   confirmAction = null;
+  if (confirmReturnTo) {
+    const p = confirmReturnTo;
+    confirmReturnTo = null;
+    confirmFromManage = false;
+    await openPanel(p);
+    return;
+  }
   if (confirmFromManage) { confirmFromManage = false; await openManage(); }
   else await closePanels();
-});
+}
+el("confirmCancel").addEventListener("click", cancelConfirm);
 el("confirmOk").addEventListener("click", async () => {
   const f = confirmAction;
   const back = confirmFromManage;
-  confirmAction = null; confirmFromManage = false;
+  confirmAction = null; confirmFromManage = false; confirmReturnTo = null;
   await closePanels();
   if (f) await f();
   if (back) await openManage();
 });
+
+// Ask before an implicit dismissal throws away a dirty edit
+// draft. Confirming clears the draft, closes the panels, then
+// runs whatever the dismissal was heading to (if anything).
+function confirmDiscardEdit(after) {
+  openConfirm({
+    title: "Buang perubahan?",
+    body: "Dialog edit punya perubahan yang belum disimpan. Buang perubahan itu?",
+    okLabel: "Buang",
+    returnTo: editPanel,
+    onOk: async () => {
+      editId = null; editDraft = null; editSnapshot = null;
+      await closePanels();
+      if (after) after();
+    },
+  });
+}
 
 // Kelola layanan panel (v0.8.0, Container-style like Firefox/Zen):
 // a plain list — drag grip, icon, name, status pills, edit (pencil)
@@ -1100,7 +1249,7 @@ function mgIconButton(icon, cls, title, onClick) {
 // the grip tracks pointer events directly instead: the dragged
 // row follows the cursor via a transform while the other rows
 // stay put in the layout.
-let mgDrag = null; // { from, startY, startScroll, insertBefore, row }
+let mgDrag = null; // { from, startY, startScroll, insertBefore, row, geo }
 
 function clearDragMarks() {
   for (const r of manageList.querySelectorAll(".mgRow")) r.classList.remove("dropAbove", "dropBelow");
@@ -1109,7 +1258,23 @@ function clearDragMarks() {
 // Where would the dragged row land if dropped at this pointer Y?
 // Returns the original services index to insert before
 // (services.length = past the end) and the row to mark.
+// During a drag the geometry cached at dragstart is used, so a
+// pointermove never measures layout: cached row centres live in
+// content coordinates (invariant under scrolling), and the
+// pointer's content position is derived from the cached list top
+// plus the current scroll offset.
 function mgInsertPoint(clientY) {
+  if (mgDrag && mgDrag.geo) {
+    const contentY = (clientY - mgDrag.geo.listTop) + manageList.scrollTop;
+    let lastOther = null;
+    for (const it of mgDrag.geo.items) {
+      lastOther = it.row;
+      if (contentY < it.mid) {
+        return { before: it.idx, mark: it.row, below: false };
+      }
+    }
+    return { before: services.length, mark: lastOther, below: true };
+  }
   let lastOther = null;
   for (const r of manageList.querySelectorAll(".mgRow")) {
     if (mgDrag && r === mgDrag.row) continue;
@@ -1133,11 +1298,29 @@ function renderManage() {
     row.dataset.idx = String(idx);
     // Pointer drag reorder: only the grip starts a drag, so text
     // selection and button clicks elsewhere on the row stay normal.
+    // The grip is also the keyboard path: focusable, and ArrowUp /
+    // ArrowDown swap the service with its neighbour (focus follows
+    // the row to its new position).
     const grip = document.createElement("span");
     grip.className = "mgGrip";
     grip.title = "Seret untuk mengubah urutan";
-    grip.setAttribute("aria-label", grip.title);
+    grip.setAttribute("aria-label", "Ubah urutan " + s.name + " (seret, atau fokus lalu tekan panah atas/bawah)");
+    grip.tabIndex = 0;
+    grip.setAttribute("role", "button");
     grip.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>';
+    grip.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      e.preventDefault();
+      const j = idx + (e.key === "ArrowUp" ? -1 : 1);
+      if (j < 0 || j >= services.length) return;
+      const [it] = services.splice(idx, 1);
+      services.splice(j, 0, it);
+      store.save(services);
+      render();
+      renderManage();
+      const g2 = manageList.querySelector('.mgRow[data-idx="' + j + '"] .mgGrip');
+      if (g2) g2.focus();
+    });
     grip.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || mgDrag) return;
       e.preventDefault();
@@ -1148,6 +1331,25 @@ function renderManage() {
         insertBefore: idx,
         row,
       };
+      // Measure every row ONCE, here at dragstart: centres in
+      // content coordinates plus the list's own edges. The move
+      // handler below then only writes (scroll, transform, mark
+      // classes) and reads scrollTop — no layout reads interleaved
+      // with style writes, so no layout thrash on long lists.
+      {
+        const listRect = manageList.getBoundingClientRect();
+        const items = [];
+        for (const r of manageList.querySelectorAll(".mgRow")) {
+          if (r === row) continue;
+          const rect = r.getBoundingClientRect();
+          items.push({
+            idx: Number(r.dataset.idx),
+            mid: (rect.top - listRect.top) + mgDrag.startScroll + rect.height / 2,
+            row: r,
+          });
+        }
+        mgDrag.geo = { listTop: listRect.top, listBottom: listRect.bottom, items };
+      }
       row.classList.add("dragging");
       manageList.classList.add("dragging");
       try { grip.setPointerCapture(e.pointerId); } catch { /* older WebView2 */ }
@@ -1156,9 +1358,8 @@ function renderManage() {
         // Auto-scroll when the pointer nears the list's edges,
         // then follow the pointer (the scroll delta is part of the
         // offset so the row stays glued to the cursor).
-        const lr = manageList.getBoundingClientRect();
-        if (ev.clientY < lr.top + 40) manageList.scrollTop -= 10;
-        else if (ev.clientY > lr.bottom - 40) manageList.scrollTop += 10;
+        if (ev.clientY < mgDrag.geo.listTop + 40) manageList.scrollTop -= 10;
+        else if (ev.clientY > mgDrag.geo.listBottom - 40) manageList.scrollTop += 10;
         const dy = (ev.clientY - mgDrag.startY) + (manageList.scrollTop - mgDrag.startScroll);
         row.style.transform = "translateY(" + dy + "px)";
         const p = mgInsertPoint(ev.clientY);
@@ -1294,9 +1495,18 @@ function showToast(text, title) {
   const toast = el("toast");
   toast.textContent = text;
   toast.title = title || text;
+  toast.classList.remove("closing");
   toast.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
+  // Dismissal mirrors the entrance (v0.8.6): a short exit beat
+  // through .closing before [hidden] lands.
+  toastTimer = setTimeout(() => {
+    toast.classList.add("closing");
+    toastTimer = setTimeout(() => {
+      toast.hidden = true;
+      toast.classList.remove("closing");
+    }, 100);
+  }, 4500);
 }
 
 let downloads = [];
@@ -1391,8 +1601,15 @@ el("notifBtn").addEventListener("click", async () => {
     b.setAttribute("aria-checked", on ? "true" : "false");
   }
   const r = el("notifBtn").getBoundingClientRect();
-  notifMenu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 224)) + "px";
+  const menuLeft = Math.max(8, Math.min(r.left, window.innerWidth - 224));
+  notifMenu.style.left = menuLeft + "px";
   notifMenu.style.top = (r.bottom + 6) + "px";
+  // The popover grows from the bell (v0.8.6): origin on the menu's
+  // top edge, horizontally at the button's centre (the menu is
+  // 208px wide; its left was clamped above, so recompute against
+  // the final position).
+  const originX = Math.max(0, Math.min(r.left + r.width / 2 - menuLeft, 208));
+  notifMenu.style.transformOrigin = originX + "px 0px";
   await openPanel(notifMenu);
 });
 for (const b of notifMenu.querySelectorAll(".popItem")) {
@@ -1611,14 +1828,16 @@ window.__TAURI__.app.getVersion()
   .catch(() => {});
 
 // Unread badge counts from Rust (page-title watcher in each service
-// webview). Re-render the sidebar so the number appears/clears.
+// webview). Only the affected tile's badge is updated (v0.8.6);
+// popId still marks the tile whose count just rose so a full
+// render (e.g. a service switch racing the event) pops it too.
 let popId = null;
 window.__TAURI__.event.listen("unread-changed", (e) => {
   const [id, count] = e.payload;
   const prev = unread.get(id) || 0;
   if (count > 0) unread.set(id, count); else unread.delete(id);
   if (count > prev) popId = id;
-  render();
+  updateBadge(id, count > prev);
 });
 
 // Ctrl+1..9 also arrives from Rust as a global shortcut while the
@@ -1682,6 +1901,13 @@ function renderQuickList(q) {
     if (query && !s.name.toLowerCase().includes(query) && !groupOf(s).toLowerCase().includes(query)) continue;
     const row = document.createElement("div");
     row.className = "qRow" + (disabled.has(s.id) ? " off" : "");
+    // Listbox semantics (v0.8.6): the container is role=listbox in
+    // the markup, rows are options, and paintQuickSel keeps
+    // aria-selected + the search input's aria-activedescendant in
+    // step with the visual selection.
+    row.setAttribute("role", "option");
+    row.id = "qrow-" + s.id;
+    row.setAttribute("aria-selected", "false");
     const tile = document.createElement("span");
     tile.className = "tileIcon qTile";
     if (s.img) {
@@ -1748,7 +1974,11 @@ function paintQuickSel() {
   quickRows.forEach((r, i) => {
     const on = i === quickSel;
     r.row.classList.toggle("sel", on);
-    if (on) r.row.scrollIntoView({ block: "nearest" });
+    r.row.setAttribute("aria-selected", on ? "true" : "false");
+    if (on) {
+      quickSearch.setAttribute("aria-activedescendant", r.row.id);
+      r.row.scrollIntoView({ block: "nearest" });
+    }
   });
 }
 
@@ -1808,6 +2038,20 @@ async function importConfig() {
     }
   } catch { showToast("File konfigurasi tidak valid."); return; }
 
+  // Replacing the whole configuration is destructive enough to
+  // ask first (v0.8.6): the file was validated above, and only a
+  // confirmed import proceeds to applyImport. Cancelling returns
+  // to the Kelola panel with the current configuration untouched.
+  openConfirm({
+    title: "Impor konfigurasi",
+    body: "Impor akan mengganti seluruh konfigurasi Sodium saat ini — daftar layanan, pin, kelompok, zoom, dan pengaturan — dengan isi file ini. Sesi login di tiap layanan tidak berubah. Lanjutkan?",
+    okLabel: "Impor",
+    fromManage: true,
+    onOk: async () => { await applyImport(snap); },
+  });
+}
+
+async function applyImport(snap) {
   const oldUrls = new Map(services.map(s => [s.id, s.url]));
   const oldPinned = new Set(pinned);
 
@@ -1876,7 +2120,16 @@ window.addEventListener("keydown", async (e) => {
   }
   if (e.key === "Escape") {
     if (linkPopupOpen) { await closeLinkPopup(); return; }
-    if (allPanels.some(p => !p.hidden)) { await closePanels(); return; }
+    const open = allPanels.find(p => !p.hidden);
+    if (open) {
+      // Same implicit-dismiss guards as the outside-click path:
+      // Escape on the discard confirmation cancels back to the
+      // edit dialog; Escape on a dirty edit draft asks first.
+      if (open === confirmPanel && confirmReturnTo) { await cancelConfirm(); return; }
+      if (open === editPanel && editIsDirty()) { confirmDiscardEdit(); return; }
+      await closePanels();
+      return;
+    }
   }
   if ((e.ctrlKey || e.metaKey) && /^[1-9]$/.test(e.key)) {
     const s = services[Number(e.key) - 1]; if (s) switchTo(s);
