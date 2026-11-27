@@ -97,6 +97,9 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .toolBtn{display:flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 6px;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--muted);cursor:pointer}
 .toolBtn:hover{background:var(--raised);color:var(--text)}
 .toolBtn.wide{font-size:12px;padding:0 10px}
+.topLeft #notifBtn{flex:none}
+#notifBtn[hidden]{display:none}
+#notifBtn.notifDim{opacity:.55}
 #dlPill{background:var(--raised);border:1px solid var(--accent);border-radius:99px;padding:3px 12px;font-size:12px;color:var(--accent);white-space:nowrap}
 #dlPill[hidden]{display:none}
 #dlPill:not([hidden]){animation:dropIn .15s ease-out}
@@ -152,6 +155,14 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 @keyframes fadeIn{from{opacity:0}}
 .appVersion{font-size:12px;color:var(--muted);white-space:nowrap}
 .picker[hidden]{display:none}
+.popMenu{position:fixed;width:208px;background:var(--panel);color:var(--text);border:1px solid var(--border-strong);border-radius:12px;padding:6px;z-index:30;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.popMenu:not([hidden]){animation:panelInFlat .14s ease-out}
+.popMenu[hidden]{display:none}
+.popTitle{font-size:11px;color:var(--muted);padding:6px 10px 4px}
+.popItem{display:flex;align-items:center;gap:9px;background:transparent;border:0;color:var(--text);font:inherit;font-size:13px;text-align:left;padding:8px 10px;border-radius:8px;cursor:pointer}
+.popItem:hover{background:var(--raised)}
+.popDot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--muted);flex:none;box-sizing:border-box}
+.popItem.on .popDot{background:var(--accent);border-color:var(--accent)}
 .pickerHead{display:flex;gap:12px;align-items:center;justify-content:space-between}
 .pickerHead h3{margin:0;font-size:18px;font-weight:600}
 #pickerSearch,#quickSearch{flex:0 1 280px;padding:9px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text)}

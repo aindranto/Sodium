@@ -137,6 +137,30 @@ function pushNotifPolicy(s) {
   invoke("set_service_notif", { id: s.id, mode: notifModeOf(s) }).catch(() => {});
 }
 
+// Top-bar bell (v0.8.5): a second door to the same per-service
+// notification setting as the edit dialog. The icon mirrors the
+// ACTIVE service's effective mode — plain bell for "allow", a
+// dimmed bell for "default", a slashed bell for "deny" — and the
+// click opens the small anchored menu (notifMenu) with the three
+// choices. refreshNotifBtn() runs at the end of every render(),
+// which covers service switches, edit-dialog saves, deletion /
+// disabling of the active service, config import and startup.
+const NOTIF_LABELS = { allow: "Diizinkan", default: "Ikuti bawaan", deny: "Ditolak" };
+function bellSvg(mode) {
+  const slash = mode === "deny" ? '<path d="M4.5 4.5l15 15"/>' : "";
+  return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l1.5 3h-15L6 16z"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>' + slash + "</svg>";
+}
+function refreshNotifBtn() {
+  const btn = el("notifBtn");
+  const s = services.find(x => x.id === activeId);
+  if (!s) { btn.hidden = true; return; }
+  const mode = notifModeOf(s);
+  btn.hidden = false;
+  btn.innerHTML = bellSvg(mode);
+  btn.classList.toggle("notifDim", mode === "default");
+  btn.title = "Notifikasi: " + NOTIF_LABELS[mode] + " — klik untuk mengubah";
+}
+
 // One-time migrations for services stored by older versions: adopt
 // the catalog colour when missing, adopt the real brand logo (or the
 // catalog glyph) when the service's URL matches a catalog entry and
@@ -172,7 +196,8 @@ const dlPanel = el("dlPanel");
 const updatePanel = el("updatePanel");
 const quickPanel = el("quickPanel");
 const groupPanel = el("groupPanel");
-const allPanels = [pickerPanel, ctxPanel, editPanel, adblockPanel, confirmPanel, managePanel, dlPanel, updatePanel, quickPanel, groupPanel];
+const notifMenu = el("notifMenu");
+const allPanels = [pickerPanel, ctxPanel, editPanel, adblockPanel, confirmPanel, managePanel, dlPanel, updatePanel, quickPanel, groupPanel, notifMenu];
 let ctxService = null;
 
 let lastFocus = null;
@@ -377,6 +402,7 @@ function render() {
   }
   popId = null;
   positionPill(false);
+  refreshNotifBtn();
 }
 
 // Discord-style active indicator: a small accent pill at the left
@@ -1348,6 +1374,42 @@ function renderDownloads() {
 el("dlBtn").addEventListener("click", () => { renderDownloads(); openPanel(dlPanel); });
 el("dlClose").addEventListener("click", closePanels);
 el("reloadBtn").addEventListener("click", () => { invoke("reload_service").catch(() => {}); });
+
+// Bell button (v0.8.5): toggles the notification menu for the
+// active service. The menu is a panel like the others — opening
+// it hides the service webviews — but anchored under the button
+// and clamped to the viewport; outside clicks, Escape and
+// service switches close it via the shared panel machinery.
+el("notifBtn").addEventListener("click", async () => {
+  if (!notifMenu.hidden) { await closePanels(); return; }
+  const s = services.find(x => x.id === activeId);
+  if (!s) return;
+  const mode = notifModeOf(s);
+  for (const b of notifMenu.querySelectorAll(".popItem")) {
+    const on = b.dataset.notifMode === mode;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-checked", on ? "true" : "false");
+  }
+  const r = el("notifBtn").getBoundingClientRect();
+  notifMenu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 224)) + "px";
+  notifMenu.style.top = (r.bottom + 6) + "px";
+  await openPanel(notifMenu);
+});
+for (const b of notifMenu.querySelectorAll(".popItem")) {
+  b.addEventListener("click", async () => {
+    const s = services.find(x => x.id === activeId);
+    if (s) {
+      // Same storage semantics as the edit dialog: "allow" is
+      // the absence of the field.
+      if (b.dataset.notifMode === "default" || b.dataset.notifMode === "deny") s.notif = b.dataset.notifMode;
+      else delete s.notif;
+      store.save(services);
+      pushNotifPolicy(s);
+      refreshNotifBtn();
+    }
+    await closePanels();
+  });
+}
 
 // Update check against the public GitHub repo: the latest release
 // is compared with the running version. The installer downloads

@@ -131,3 +131,26 @@ Angka layanan aktif per halaman adalah sifat web app-nya sendiri (WhatsApp Web d
   tetap tampil sebagai toast Windows dari layanannya sendiri
   (perilaku v0.1.1); yang diperbaiki hanya izinnya, ditambah
   kontrol per layanan ini.
+
+## 10. Catatan v0.8.5 (27 Nov 2026)
+
+- **Tombol notifikasi di bar atas** (usulan Agung): ikon lonceng
+  tepat di samping tombol muat ulang, berlaku untuk layanan yang
+  sedang aktif — pintu kedua menuju pengaturan Notifikasi per
+  layanan dari v0.8.4, tanpa membuka panel Kelola. Ikonnya
+  mencerminkan mode efektif layanan aktif: lonceng biasa =
+  Izinkan, lonceng redup = Ikuti bawaan, lonceng coret = Tolak;
+  tooltip menyebut statusnya dalam kata.
+- Klik tombol membuka menu kecil terjangkar di bawahnya berisi
+  tiga pilihan radio (Izinkan / Ikuti bawaan / Tolak) dengan
+  penanda pada pilihan yang berlaku. Menu ini panel seperti
+  panel lain (membukanya menyembunyikan webview layanan) dan
+  menutup saat klik di luar, Escape, atau berpindah layanan.
+- Memilih mode menulis field `notif` yang sama persis dengan
+  dialog edit (mode Izinkan = field dihapus) lalu menyinkronkan
+  lewat `pushNotifPolicy` / `set_service_notif` yang sama, jadi
+  kedua pintu tidak pernah berbeda isi. Status ikon disegarkan
+  pada setiap `render()` — mencakup berpindah layanan, simpan
+  dialog edit, hapus/nonaktifkan layanan aktif, impor config,
+  dan startup. Bila tidak ada layanan aktif, tombol disembunyikan.
+- Murni frontend (`ui/`); sisi Rust tidak berubah sama sekali.

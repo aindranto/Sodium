@@ -16,6 +16,7 @@
   <header id="topbar">
     <div class="topLeft">
       <button id="reloadBtn" class="toolBtn" title="Muat ulang layanan aktif" aria-label="Muat ulang layanan aktif"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button>
+      <button id="notifBtn" class="toolBtn" title="Notifikasi" aria-label="Pengaturan notifikasi layanan aktif" aria-haspopup="true" hidden></button>
       <div id="activeName">Sodium</div>
     </div>
     <div id="toast" hidden></div>
@@ -107,6 +108,13 @@
       <button id="ctxManage" class="btnGhost">Kelola layanan</button>
       <button id="ctxAdblock" class="btnGhost" hidden>Adblock YouTube</button>
     </div>
+  </div>
+
+  <div id="notifMenu" class="popMenu" hidden>
+    <div class="popTitle">Notifikasi layanan ini</div>
+    <button class="popItem" data-notif-mode="allow"><span class="popDot"></span>Izinkan</button>
+    <button class="popItem" data-notif-mode="default"><span class="popDot"></span>Ikuti bawaan</button>
+    <button class="popItem" data-notif-mode="deny"><span class="popDot"></span>Tolak</button>
   </div>
 
   <div id="managePanel" class="picker" hidden>
