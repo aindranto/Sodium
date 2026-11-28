@@ -174,15 +174,17 @@
     </div>
   </div>
 
-  <div id="inboxPanel" class="picker" hidden>
-    <div class="pickerHead">
+  <div id="inboxPanel" class="drawer" hidden>
+    <div class="drawerHead">
       <h2>Notifikasi</h2>
-      <button id="inboxClear" class="btnGhost">Bersihkan</button>
+      <button id="inboxMenuBtn" class="toolBtn" title="Opsi notifikasi" aria-label="Opsi notifikasi" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+      <button id="inboxClose" class="toolBtn" title="Tutup panel" aria-label="Tutup panel notifikasi"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <div id="inboxMenu" class="popMenu" hidden role="menu" aria-label="Opsi notifikasi">
+        <button id="inboxMarkRead" class="popItem" role="menuitem">Tandai semua dibaca</button>
+        <button id="inboxClear" class="popItem" role="menuitem">Bersihkan</button>
+      </div>
     </div>
-    <div id="inboxList" class="manageList"></div>
-    <div class="pickerFoot">
-      <button id="inboxClose" class="btnGhost">Tutup</button>
-    </div>
+    <div id="inboxList" class="drawerList"></div>
   </div>
 
   <div id="updatePanel" class="picker" hidden>

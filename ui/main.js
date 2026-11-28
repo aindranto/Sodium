@@ -484,6 +484,11 @@ const confirmPanel = el("confirmPanel");
 const managePanel = el("managePanel");
 const dlPanel = el("dlPanel");
 const inboxPanel = el("inboxPanel");
+// The inbox drawer's ⋯ menu is NOT in allPanels on purpose:
+// like the Kelola group menu, it opens over its (already open)
+// parent panel and is shown / hidden by hand (hideInboxMenu),
+// so the panel machinery never tears the drawer down under it.
+const inboxMenu = el("inboxMenu");
 const updatePanel = el("updatePanel");
 const quickPanel = el("quickPanel");
 const groupPanel = el("groupPanel");
@@ -513,13 +518,29 @@ async function openPanel(panel) {
   // the dialog further down; it no-ops when no dialog is pending.
   if (panel !== permPanel) savePermChoices();
   hideGroupMenu();
+  hideInboxMenu();
   panelSeq++;
   lastFocus = document.activeElement;
   for (const p of allPanels) { p.hidden = true; p.classList.remove("closing"); }
   // Only the modal popups (picker / Kelola / right-click menu,
   // class "picker") get the dimmed backdrop.
   el("scrim").hidden = !panel.classList.contains("picker");
-  await invoke("set_services_visible", { visible: false });
+  if (panel === inboxPanel) {
+    // The notification drawer (v0.11.1) does NOT hide the
+    // services: Rust shrinks the active service by the drawer
+    // width (push), or parks the split companion (overlay).
+    inboxOpen = true;
+    await invoke("set_inbox_open", { open: true }).catch(() => {});
+  } else {
+    // Any other panel taking over ends the drawer's push:
+    // restore the service rect first, so the Rust flag can
+    // never outlive the drawer.
+    if (inboxOpen) {
+      inboxOpen = false;
+      await invoke("set_inbox_open", { open: false }).catch(() => {});
+    }
+    await invoke("set_services_visible", { visible: false });
+  }
   panel.hidden = false;
   const f = panel.querySelector("input:not([type='file']), button:not([disabled])");
   if (f) f.focus();
@@ -530,6 +551,7 @@ async function closePanels() {
   // clicks and service switches all funnel through here.
   savePermChoices();
   hideGroupMenu();
+  hideInboxMenu();
   const open = allPanels.filter(p => !p.hidden);
   const seq = ++panelSeq;
   if (open.length) {
@@ -540,6 +562,14 @@ async function closePanels() {
     for (const p of open) { p.hidden = true; p.classList.remove("closing"); }
   }
   el("scrim").hidden = true;
+  // Restore the service rect the notification drawer pushed
+  // (v0.11.1) — after the exit beat, so the shrinking service
+  // cannot cover the drawer while it slides out. When the
+  // drawer was not open this is skipped entirely.
+  if (inboxOpen) {
+    inboxOpen = false;
+    await invoke("set_inbox_open", { open: false }).catch(() => {});
+  }
   await invoke("set_services_visible", { visible: true });
   if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
 }
@@ -554,6 +584,11 @@ document.addEventListener("click", (e) => {
   // anywhere else closes the menu first, and a click that stays
   // inside Kelola goes no further.
   const path = e.composedPath ? e.composedPath() : [e.target];
+  // The inbox ⋯ menu floats over the drawer: a click anywhere
+  // outside the menu (and not on its own button, which toggles
+  // it) dismisses the menu only — the drawer itself is judged
+  // by the panel logic below.
+  if (!inboxMenu.hidden && !path.includes(inboxMenu) && !path.includes(el("inboxMenuBtn"))) hideInboxMenu();
   if (!groupMenu.hidden) {
     if (path.includes(groupMenu)) return;
     hideGroupMenu();
@@ -2187,18 +2222,37 @@ function renderDownloads() {
 el("dlBtn").addEventListener("click", () => { renderDownloads(); openPanel(dlPanel); });
 el("dlClose").addEventListener("click", closePanels);
 
-// Notification panel (v0.11.0, Jalur B tahap 2): every page
-// notification the bridge script records, across all services,
-// in one list. Rust persists the store (notifications.json);
-// this side mirrors it for rendering. "Unread" = entries that
-// arrived since the panel was last opened; the watermark
-// lives in localStorage and rides the config mirror like
-// every other durable setting. The panel only ever shows
-// what the page-side hooks caught — a notification born
-// purely inside a service worker can slip past it (the
-// Windows toasts are unaffected either way).
+// Notification drawer (v0.11.0, Jalur B tahap 2; drawer
+// redesign v0.11.1 after the UI research of 28 Nov): every
+// page notification the bridge script records, across all
+// services, in one right-side drawer. Rust persists the
+// store (notifications.json); this side mirrors it for
+// rendering. "Unread" = entries that arrived since the
+// drawer was last opened; the watermark lives in
+// localStorage and rides the config mirror like every other
+// durable setting. The drawer only ever shows what the
+// page-side hooks caught — a notification born purely
+// inside a service worker can slip past it (the Windows
+// toasts are unaffected either way).
+//
+// v0.11.1 shape (the approved research package): the drawer
+// PUSHES the active service in single mode and overlays the
+// right pane in split mode — Rust owns that geometry through
+// set_inbox_open, driven from the shared panel machinery
+// (openPanel / closePanels) so every open/close path restores
+// the service rect. Unread entries keep a per-item dot for
+// the whole open session: the set is snapshotted BEFORE the
+// watermark moves (inboxUnreadSnapshot), so the badge can
+// clear immediately while the dots stay until the next open.
 let inboxItems = [];
 let inboxSeenAt = parseInt(localStorage.getItem("sodium.notifSeenAt") || "0", 10) || 0;
+let inboxOpen = false;
+let inboxUnreadSnapshot = new Set();
+
+function hideInboxMenu() {
+  inboxMenu.hidden = true;
+  el("inboxMenuBtn").setAttribute("aria-expanded", "false");
+}
 
 function inboxUnreadCount() {
   return inboxItems.reduce((n, x) => n + (x.at_ms > inboxSeenAt ? 1 : 0), 0);
@@ -2226,30 +2280,65 @@ function relTimeNotif(ms) {
   return new Date(ms).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+// Day grouping for the drawer list (v0.11.1): "Hari ini" and
+// "Kemarin" by local calendar day, a full id-ID date after
+// that. Entries arrive newest-first, so equal keys are always
+// adjacent and a header goes in whenever the key changes.
+function inboxDayKey(ms) {
+  const d = new Date(ms);
+  return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate();
+}
+function inboxDayLabel(ms) {
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOf(new Date()) - startOf(new Date(ms))) / 86400000);
+  if (days <= 0) return "Hari ini";
+  if (days === 1) return "Kemarin";
+  return new Date(ms).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+}
+
 function renderInbox() {
   const list = el("inboxList");
   list.innerHTML = "";
   if (!inboxItems.length) {
-    const d = document.createElement("div");
-    d.className = "dlEmpty";
-    d.textContent = "Belum ada notifikasi tercatat";
-    list.appendChild(d);
+    const wrap = document.createElement("div");
+    wrap.className = "inboxEmpty";
+    const ic = document.createElement("span");
+    ic.className = "inboxEmptyIcon";
+    ic.innerHTML = '<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>';
+    const t = document.createElement("div");
+    t.className = "inboxEmptyTitle";
+    t.textContent = "Belum ada notifikasi tercatat";
+    const sub = document.createElement("div");
+    sub.className = "inboxEmptySub";
+    sub.textContent = "Notifikasi dari semua layanan akan terkumpul di sini.";
+    wrap.append(ic, t, sub);
+    list.appendChild(wrap);
     return;
   }
+  let lastDay = null;
   for (const n of inboxItems) {
+    const key = inboxDayKey(n.at_ms);
+    if (key !== lastDay) {
+      lastDay = key;
+      const h = document.createElement("div");
+      h.className = "inboxGroupHead";
+      h.textContent = inboxDayLabel(n.at_ms);
+      list.appendChild(h);
+    }
     const s = services.find(x => x.id === n.service_id);
+    const unread = inboxUnreadSnapshot.has(n);
     const row = document.createElement("div");
-    row.className = "inboxRow";
+    row.className = "inboxRow" + (unread ? " unread" : "");
     const ic = document.createElement("span");
     ic.className = "inboxIcon";
     if (s && s.img) {
       const im = document.createElement("img");
       im.src = s.img; im.alt = "";
       const f = imgFilter(s); if (f) im.style.filter = f;
-      im.onerror = () => { im.replaceWith(iconVisual(s, 20)); if (s.color) ic.style.background = s.color; };
+      im.onerror = () => { im.replaceWith(iconVisual(s, 16)); if (s.color) ic.style.background = s.color; };
       ic.appendChild(im);
     } else if (s) {
-      ic.appendChild(iconVisual(s, 20));
+      ic.appendChild(iconVisual(s, 16));
       if (s.color) ic.style.background = s.color;
     } else {
       // The owning service was deleted after the notification
@@ -2271,6 +2360,12 @@ function renderInbox() {
     time.className = "inboxTime";
     time.textContent = relTimeNotif(n.at_ms);
     head.append(svc, time);
+    if (unread) {
+      const dot = document.createElement("span");
+      dot.className = "inboxDot";
+      dot.title = "Belum dibaca";
+      head.appendChild(dot);
+    }
     const title = document.createElement("div");
     title.className = "inboxTitle";
     title.textContent = n.title || "(tanpa judul)";
@@ -2286,7 +2381,8 @@ function renderInbox() {
       row.classList.add("clickable");
       row.title = "Buka " + s.name;
       // The same path as a sidebar click: switchTo carries
-      // the split-swap semantics and closes the panels.
+      // the split-swap semantics and closes the panels (which
+      // restores the service rect the drawer pushed).
       row.addEventListener("click", () => switchTo(s));
     }
     list.appendChild(row);
@@ -2294,9 +2390,16 @@ function renderInbox() {
 }
 
 async function openInbox() {
+  // Snapshot the unread set BEFORE the watermark moves: the
+  // badge clears as soon as the drawer opens (as before), but
+  // these entries keep their dot + tint for the whole open
+  // session and only lose them on the NEXT open (v0.11.1,
+  // research decision D3). Entries arriving while the drawer
+  // is open are never in the snapshot, so they get no dot.
+  inboxUnreadSnapshot = new Set(inboxItems.filter(x => x.at_ms > inboxSeenAt));
   renderInbox();
   await openPanel(inboxPanel);
-  // Opening the panel reads everything in it: the watermark
+  // Opening the drawer reads everything in it: the watermark
   // moves to the newest entry and the badge clears.
   if (inboxItems.length) inboxSeenAt = Math.max(inboxSeenAt, inboxItems[0].at_ms);
   saveInboxSeenAt();
@@ -2308,7 +2411,27 @@ el("inboxBtn").addEventListener("click", () => {
   openInbox();
 });
 el("inboxClose").addEventListener("click", closePanels);
+el("inboxMenuBtn").addEventListener("click", () => {
+  const show = inboxMenu.hidden;
+  if (show) {
+    inboxMenu.hidden = false;
+    el("inboxMenuBtn").setAttribute("aria-expanded", "true");
+  } else {
+    hideInboxMenu();
+  }
+});
+// "Tandai semua dibaca": moves the watermark and drops the
+// dots in the open drawer — the entries themselves stay.
+el("inboxMarkRead").addEventListener("click", () => {
+  hideInboxMenu();
+  if (inboxItems.length) inboxSeenAt = Math.max(inboxSeenAt, inboxItems[0].at_ms);
+  inboxUnreadSnapshot = new Set();
+  saveInboxSeenAt();
+  renderInboxBadge(false);
+  renderInbox();
+});
 el("inboxClear").addEventListener("click", () => {
+  hideInboxMenu();
   if (!inboxItems.length) return;
   openConfirm({
     title: "Bersihkan semua notifikasi?",
@@ -2325,8 +2448,9 @@ el("inboxClear").addEventListener("click", () => {
 });
 
 // New entries arrive live from Rust: the badge ticks up, and
-// an open panel re-renders (its entries are read by
-// definition, so the watermark follows along).
+// an open drawer re-renders (its entries are read by
+// definition, so the watermark follows along; the new entry
+// is not in the unread snapshot, so it gets no dot).
 window.__TAURI__.event.listen("notif-added", (e) => {
   const n = e.payload;
   if (!n || typeof n.at_ms !== "number") return;
@@ -2344,6 +2468,10 @@ invoke("notifications_list").then((list) => {
   inboxItems = Array.isArray(list) ? list : [];
   renderInboxBadge(false);
 }).catch(() => {});
+// A fresh UI always starts with the drawer closed: reset the
+// Rust flag so a UI reload mid-drawer cannot strand the
+// active service in its shrunken rect (v0.11.1).
+invoke("set_inbox_open", { open: false }).catch(() => {});
 el("reloadBtn").addEventListener("click", () => { invoke("reload_service").catch(() => {}); });
 
 // Bell button (v0.8.5): toggles the notification menu for the

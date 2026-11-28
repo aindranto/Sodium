@@ -831,3 +831,61 @@ tidak ada yang kelewat di antara banyak layanan.
   tanpa panggilan dari halaman bisa tidak tercatat.
   Toast Windows dari WebView2 tidak berubah sama sekali:
   panel ini catatan tambahan, bukan pengganti.
+
+## 21. Catatan v0.11.1 (28 Nov 2026) — Panel notifikasi jadi laci kanan
+
+Rombak tampilan panel v0.11.0 mengikuti riset UI yang
+diminta Agung (`riset-ui-panel-notifikasi-2026-11-28.md`):
+paket rekomendasi riset disetujui utuh (9 keputusan D1–D9).
+Fungsi dan data tidak berubah — yang berubah kulit dan
+geometrinya.
+
+- **Laci kanan, bukan modal tengah**: `#inboxPanel` keluar
+  dari kelas `.picker`; kelas baru `.drawer` menempel di
+  kanan mulai dari bawah bar atas sampai dasar area konten,
+  lebar tetap `min(380px, 100vw − 108px)`. Kepala tetap
+  (judul + menu ⋯ + X), daftar scroll internal di bawahnya.
+- **Push vs overlay**: state Rust baru `inbox_open` +
+  command `set_inbox_open(bool)`. Mode tunggal: layout
+  mengecilkan rect layanan aktif sebesar lebar laci
+  (`inbox_drawer_width` mencerminkan rumus CSS dari lebar
+  inner jendela, jadi resize otomatis mengikuti) — laci
+  mendorong layanan, konteks tetap hidup. Split aktif:
+  layout memarkir pendamping (jalur parkir yang sama dengan
+  mode ganti pendamping), laci tampil sebagai overlay di
+  panel kanan tanpa mengubah geometri panel.
+- **Semua jalur tutup memulihkan rect**: mesin panel bersama
+  yang diarahkan — `openPanel` khusus menangani laci (tidak
+  menyembunyikan layanan; panel lain yang mengambil alih
+  lebih dulu memulihkan rect), `closePanels` memulihkan
+  setelah ketukan keluar. X / Esc / klik di luar / panel
+  lain dibuka / klik item (lewat `switchTo`) semua bermuara
+  ke sana. UI juga memanggil `set_inbox_open(false)` sekali
+  saat start, jadi muat-ulang UI tidak bisa meninggalkan
+  flag Rust menyala.
+- **Pengelompokan per hari**: header "Hari ini" / "Kemarin"
+  / tanggal penuh id-ID; di dalam kelompok terbaru dulu
+  (urutan store memang terbaru-di-atas).
+- **Titik belum-dibaca per item (snapshot)**: saat laci
+  dibuka, himpunan entri yang lebih baru dari watermark
+  `sodium.notifSeenAt` ditangkap; entri itu dirender dengan
+  titik aksen + latar tint selama sesi buka ini, sementara
+  watermark langsung maju (lencana padam seperti
+  sebelumnya). Entri yang tiba saat laci terbuka tanpa
+  titik. Buka berikutnya: titik hilang.
+- **Menu ⋯ di kepala**: "Tandai semua dibaca" (majukan
+  watermark + hilangkan titik di tampilan, data tidak
+  dihapus) dan "Bersihkan" (tetap lewat `openConfirm`,
+  okLabel "Bersihkan"). Menu bukan anggota `allPanels` —
+  pola yang sama dengan menu grup Kelola: tampil/sembunyi
+  manual di atas panel induknya.
+- **Anatomi item**: ikon layanan 28px; baris label = nama
+  layanan + waktu relatif di kanan + titik aksen untuk
+  belum-dibaca; judul tebal 1 baris ellipsis; isi maks 2
+  baris. Item layanan terhapus/nonaktif tetap tidak bisa
+  diklik. Keadaan kosong: ikon inbox besar redup + "Belum
+  ada notifikasi tercatat" + subteks penjelasan.
+- Yang TIDAK berubah: `notifications.json`,
+  `notifications_list`/`notifications_clear`, event
+  `notif-added`, lencana tombol inbox + cara hitungnya,
+  hook jembatan, caveat service worker.

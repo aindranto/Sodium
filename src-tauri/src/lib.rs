@@ -150,6 +150,17 @@ struct AppState {
     /// it so a resize or split change mid-panel cannot flash the
     /// services back over the panel.
     services_hidden: Mutex<bool>,
+    /// Whether the notification drawer is open (v0.11.1). In
+    /// single mode the layout shrinks the active service by the
+    /// drawer's width, so the drawer PUSHES the service instead
+    /// of covering it; in split mode the layout parks the
+    /// companion instead, so the drawer overlays the right pane
+    /// without touching the pane geometry. Set only through
+    /// set_inbox_open; the UI calls it on every drawer open /
+    /// close path (the shared panel machinery included) and once
+    /// with `false` at startup, so the flag cannot outlive the
+    /// drawer — a UI reload resets it.
+    inbox_open: Mutex<bool>,
     /// True while a divider drag session is polling the cursor.
     split_dragging: std::sync::atomic::AtomicBool,
     /// Folder the Save As dialog starts in: the user's Downloads folder
@@ -308,6 +319,19 @@ fn clamp_split_ratio(ratio: f64, content_w: f64) -> f64 {
     main / avail
 }
 
+/// Width of the notification drawer (v0.11.1): mirrors the
+/// CSS `min(380px, 100vw - 108px)` on #inboxPanel, computed
+/// from the window's logical inner width (the UI webview spans
+/// the whole window, so its 100vw is the inner width). The
+/// layout pass shrinks the active service by exactly this much
+/// while the drawer is open, so the HTML drawer and the native
+/// service never overlap.
+fn inbox_drawer_width(window: &tauri::Window) -> f64 {
+    (380.0f64)
+        .min(logical_inner_size(window).width - 108.0)
+        .max(0.0)
+}
+
 /// The one layout pass for service webviews: who sits where.
 /// Single mode: the active service fills the content area. Split
 /// mode (on + gate passing): the active service is the main
@@ -318,6 +342,11 @@ fn clamp_split_ratio(ratio: f64, content_w: f64) -> f64 {
 /// the UI's companion header strip (v0.9.1, COMPANION_STRIP_H);
 /// while the UI is re-picking a companion (companion_picking)
 /// the current one is parked like any inactive service.
+/// While the notification drawer is open (v0.11.1, inbox_open)
+/// the single-mode active service shrinks by the drawer's
+/// width (the drawer pushes it), and in split mode the
+/// companion is parked like a re-pick, so the drawer overlays
+/// the right pane with the pane geometry untouched.
 /// Everything else is parked off-screen at full content size. While a UI panel or the link
 /// popup owns the screen (services_hidden / link_open) nothing
 /// is shown, but positions are still updated so the restore is
@@ -328,6 +357,7 @@ fn layout_services(app: &tauri::AppHandle, state: &AppState, window: &tauri::Win
     let companion = state.companion.lock().unwrap().clone();
     let split = *state.split_mode.lock().unwrap() && *state.gate_ok.lock().unwrap();
     let picking = *state.companion_picking.lock().unwrap();
+    let inbox = *state.inbox_open.lock().unwrap();
     let blocked = *state.services_hidden.lock().unwrap() || *state.link_open.lock().unwrap();
     let avail = csize.width - DIVIDER_W;
     let main_w = avail * clamp_split_ratio(*state.split_ratio.lock().unwrap(), csize.width);
@@ -340,6 +370,15 @@ fn layout_services(app: &tauri::AppHandle, state: &AppState, window: &tauri::Win
             if split {
                 let _ = wv.set_position(cpos);
                 let _ = wv.set_size(LogicalSize::new(main_w, csize.height));
+            } else if inbox {
+                // The notification drawer pushes the service
+                // (v0.11.1): the freed strip on the right is
+                // exactly the drawer's CSS width.
+                let _ = wv.set_position(cpos);
+                let _ = wv.set_size(LogicalSize::new(
+                    (csize.width - inbox_drawer_width(window)).max(0.0),
+                    csize.height,
+                ));
             } else {
                 let _ = wv.set_position(cpos);
                 let _ = wv.set_size(csize);
@@ -349,7 +388,7 @@ fn layout_services(app: &tauri::AppHandle, state: &AppState, window: &tauri::Win
             } else {
                 let _ = wv.show();
             }
-        } else if split && !picking && Some(label) == companion.as_deref() {
+        } else if split && !picking && !inbox && Some(label) == companion.as_deref() {
             // Below the UI's companion header strip (v0.9.1):
             // the strip owns the top COMPANION_STRIP_H px of
             // the right pane, so the webview starts lower and
@@ -1309,6 +1348,23 @@ fn set_services_visible(app: tauri::AppHandle, state: State<'_, AppState>, visib
     }
 }
 
+/// Open or close the notification drawer (v0.11.1). Unlike the
+/// modal panels, the drawer does NOT hide the services: the
+/// flag is all the layout pass needs — in single mode it
+/// shrinks the active service by the drawer width (push), in
+/// split mode it parks the companion so the drawer overlays
+/// the right pane. The UI calls this on every drawer open /
+/// close path (the shared panel machinery routes through it)
+/// and once with `false` at startup, so the flag can never
+/// outlive the drawer.
+#[tauri::command]
+fn set_inbox_open(app: tauri::AppHandle, state: State<'_, AppState>, open: bool) {
+    *state.inbox_open.lock().unwrap() = open;
+    if let Some(window) = state.main_window.lock().unwrap().clone() {
+        layout_services(&app, &state, &window);
+    }
+}
+
 /// Open the link popup over the active service, or navigate it if it is
 /// already open. The active service webview is hidden while the popup is
 /// open: the UI's link bar sits in the strip above the popup and would
@@ -1991,6 +2047,7 @@ pub fn run() {
             switch_service,
             start_service_hidden,
             set_services_visible,
+            set_inbox_open,
             close_service,
             close_webview,
             set_pinned,
