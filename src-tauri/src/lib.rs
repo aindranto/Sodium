@@ -44,6 +44,14 @@ struct AppState {
     /// request by the handler on the service webview itself (see
     /// create_service_webview).
     notif_policy: Mutex<HashMap<String, String>>,
+    /// Per-service microphone/camera permission policy (service id ->
+    /// "allow" | "default" | "deny"), pushed by the UI exactly like
+    /// notif_policy (startup, edit saves, config import, the
+    /// first-open permission dialog). Services without an entry are
+    /// treated as "allow". Read on every permission request by the
+    /// handler on the service webview itself (see
+    /// create_service_webview).
+    media_policy: Mutex<HashMap<String, String>>,
     /// Label of the service webview currently shown. Alive service
     /// webviews are stacked native controls, so exactly one may
     /// occupy the service area at a time: this one. The rest are
@@ -380,11 +388,24 @@ fn create_service_webview(
         // default (Shopee Seller Chat showed a "browser is blocking
         // notifications" banner). The per-service policy comes from
         // AppState (UI setting, see set_service_notif); no entry
-        // means "allow", the historical intent.
+        // means "allow", the historical intent. Microphone and
+        // camera requests (v0.8.8) are answered the same way from
+        // the media policy (see set_service_media): before this,
+        // they fell through to the Default arm and WebView2 denied
+        // them silently, so calls could never get the mic/camera.
         .on_permission_request(move |_, kind| match kind {
             PermissionKind::Notifications => {
                 let state = app_for_perm.state::<AppState>();
                 let policy = state.notif_policy.lock().unwrap();
+                match policy.get(&id_for_perm).map(String::as_str) {
+                    Some("default") => PermissionResponse::Default,
+                    Some("deny") => PermissionResponse::Deny,
+                    _ => PermissionResponse::Allow,
+                }
+            }
+            PermissionKind::Microphone | PermissionKind::Camera => {
+                let state = app_for_perm.state::<AppState>();
+                let policy = state.media_policy.lock().unwrap();
                 match policy.get(&id_for_perm).map(String::as_str) {
                     Some("default") => PermissionResponse::Default,
                     Some("deny") => PermissionResponse::Deny,
@@ -909,6 +930,21 @@ fn set_service_notif(state: State<'_, AppState>, id: String, mode: String) {
     state.notif_policy.lock().unwrap().insert(id, mode);
 }
 
+/// Set one service's microphone/camera permission policy:
+/// "allow" (answer Allow), "default" (leave the request to
+/// WebView2) or "deny". Unknown values fall back to "allow",
+/// mirroring set_service_notif. The service webview's permission
+/// handler reads this map on every request, so the change also
+/// reaches webviews that are already alive.
+#[tauri::command]
+fn set_service_media(state: State<'_, AppState>, id: String, mode: String) {
+    let mode = match mode.as_str() {
+        "default" | "deny" => mode,
+        _ => "allow".to_string(),
+    };
+    state.media_policy.lock().unwrap().insert(id, mode);
+}
+
 #[tauri::command]
 fn alive_services(state: State<'_, AppState>) -> Vec<String> {
     state.alive_mru.lock().unwrap().clone()
@@ -1099,6 +1135,7 @@ pub fn run() {
             set_max_alive,
             set_service_zoom,
             set_service_notif,
+            set_service_media,
             open_link_popup,
             close_link_popup,
             open_external,

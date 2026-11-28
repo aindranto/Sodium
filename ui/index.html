@@ -236,6 +236,13 @@
             <option value="deny">Tolak</option>
           </select>
         </label>
+        <label class="mgSetItem"><span>Mikrofon & kamera</span>
+          <select id="editMedia" aria-label="Izin mikrofon dan kamera layanan ini">
+            <option value="allow">Izinkan</option>
+            <option value="default">Ikuti bawaan</option>
+            <option value="deny">Tolak</option>
+          </select>
+        </label>
       </div>
       <button id="editAdblockBtn" class="btnGhost" hidden>Adblock YouTube</button>
     </div>
@@ -273,6 +280,59 @@
       <button id="confirmCancel" class="btnGhost">Batal</button>
       <button id="confirmOk" class="btnDanger">Hapus</button>
     </div>
+  </div>
+
+  <div id="permPanel" class="picker" hidden>
+    <div class="pickerHead">
+      <h2 id="permTitle">Izin layanan</h2>
+    </div>
+    <p class="muted permIntro">Situs layanan ini bisa meminta izin berikut. Pilihanmu disimpan untuk layanan ini.</p>
+    <div class="permRows">
+      <div class="permRow">
+        <span class="permLabel">Notifikasi</span>
+        <div class="permSeg" role="radiogroup" aria-label="Izin notifikasi">
+          <button type="button" role="radio" aria-checked="true" data-perm-kind="notif" data-perm-val="allow">Izinkan</button>
+          <button type="button" role="radio" aria-checked="false" data-perm-kind="notif" data-perm-val="deny">Tolak</button>
+        </div>
+      </div>
+      <div class="permRow">
+        <span class="permLabel">Mikrofon</span>
+        <div class="permSeg" role="radiogroup" aria-label="Izin mikrofon">
+          <button type="button" role="radio" aria-checked="true" data-perm-kind="media" data-perm-val="allow">Izinkan</button>
+          <button type="button" role="radio" aria-checked="false" data-perm-kind="media" data-perm-val="deny">Tolak</button>
+        </div>
+      </div>
+      <div class="permRow">
+        <span class="permLabel">Kamera</span>
+        <div class="permSeg" role="radiogroup" aria-label="Izin kamera">
+          <button type="button" role="radio" aria-checked="true" data-perm-kind="media" data-perm-val="allow">Izinkan</button>
+          <button type="button" role="radio" aria-checked="false" data-perm-kind="media" data-perm-val="deny">Tolak</button>
+        </div>
+      </div>
+    </div>
+    <p class="muted permNote">Mikrofon dan kamera berbagi satu izin. Bisa diubah kapan saja di dialog edit layanan.</p>
+    <div class="pickerFoot">
+      <button id="permSave" class="btnPrimary">Simpan</button>
+    </div>
+  </div>
+
+  <div id="groupNamePanel" class="picker" hidden>
+    <div class="pickerHead">
+      <h2>Kelompok baru</h2>
+    </div>
+    <label class="groupNameLabel">Nama kelompok
+      <input id="groupNameInput" maxlength="30" placeholder="mis. Kerja" aria-label="Nama kelompok baru"/>
+    </label>
+    <p id="groupNameErr" class="mgWarn" hidden></p>
+    <div class="pickerFoot">
+      <button id="groupNameCancel" class="btnGhost">Batal</button>
+      <button id="groupNameSave" class="btnPrimary">Simpan</button>
+    </div>
+  </div>
+
+  <div id="groupMenu" class="popMenu" role="menu" aria-label="Menu kelompok" tabindex="-1" hidden>
+    <div class="popTitle" id="groupMenuTitle">Kelompok</div>
+    <button class="popItem" id="groupMenuDelete" role="menuitem">Hapus kelompok</button>
   </div>
 
   <datalist id="groupNames"></datalist>

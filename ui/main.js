@@ -71,7 +71,7 @@ const store = {
 // side: localStorage is the working copy, but it dies with the
 // webview profile data; config.json survives that. Saves are
 // debounced and revisioned; at startup a newer config.json wins.
-const CFG_KEYS = ["sodium.services", "sodium.pinned", "sodium.disabled", "sodium.showNames", "sodium.lastActive", "sodium.onboarded", "sodium.zoom", "sodium.zoomByService", "sodium.maxAlive", "sodium.downloads", "sodium.lastUpdateCheck", "sodium.iconSize", "sodium.ytAdblock", "sodium.ytAdblockInfo", "sodium.ytAdblockScript"];
+const CFG_KEYS = ["sodium.services", "sodium.pinned", "sodium.disabled", "sodium.groups", "sodium.showNames", "sodium.lastActive", "sodium.onboarded", "sodium.zoom", "sodium.zoomByService", "sodium.maxAlive", "sodium.downloads", "sodium.lastUpdateCheck", "sodium.iconSize", "sodium.ytAdblock", "sodium.ytAdblockInfo", "sodium.ytAdblockScript"];
 let cfgRev = parseInt(localStorage.getItem("sodium.cfgRev") || "0", 10) || 0;
 let cfgTimer = null;
 let applyingConfig = false;
@@ -137,6 +137,61 @@ function pushNotifPolicy(s) {
   invoke("set_service_notif", { id: s.id, mode: notifModeOf(s) }).catch(() => {});
 }
 
+// A service's microphone/camera permission mode (v0.8.8): one
+// shared mode for both kinds, stored and mirrored exactly like
+// the notification mode — Rust's permission handler on the
+// service webview answers both kinds from it via set_service_media.
+function mediaModeOf(s) {
+  return s && (s.media === "default" || s.media === "deny") ? s.media : "allow";
+}
+function pushMediaPolicy(s) {
+  invoke("set_service_media", { id: s.id, mode: mediaModeOf(s) }).catch(() => {});
+}
+
+// Persistent, ordered list of group names (v0.8.8). Before this,
+// a group existed only while a service used it: empty groups were
+// invisible everywhere and vanished when their last service moved
+// out. The list keeps empty groups alive so Kelola can show them
+// (with a drop slot); the sidebar still derives its separators
+// from the services themselves, so empty groups render nothing
+// there. Names compare case-insensitively everywhere here: the
+// list never holds two names that differ only by case.
+let groups = [];
+function sameGroupName(a, b) {
+  return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+}
+function canonicalGroup(name) {
+  const hit = groups.find(g => sameGroupName(g, name));
+  return hit || String(name || "").trim();
+}
+function groupIsEmpty(name) {
+  return !services.some(s => sameGroupName(groupOf(s), name));
+}
+function saveGroups() {
+  localStorage.setItem("sodium.groups", JSON.stringify(groups));
+  scheduleConfigSave();
+}
+function loadGroups() {
+  let stored = [];
+  try { stored = JSON.parse(localStorage.getItem("sodium.groups") || "[]"); } catch { stored = []; }
+  if (!Array.isArray(stored)) stored = [];
+  groups = [];
+  for (const g of stored) {
+    const name = String(g || "").trim();
+    if (name && !groups.some(x => sameGroupName(x, name))) groups.push(name);
+  }
+  // Migration / union: every group a service uses joins the list,
+  // in first-appearance order, so the list always covers the
+  // derived groups too.
+  let changed = JSON.stringify(groups) !== JSON.stringify(stored);
+  for (const s of services) {
+    const g = groupOf(s);
+    if (g && !groups.some(x => sameGroupName(x, g))) { groups.push(g); changed = true; }
+  }
+  if (changed) saveGroups();
+}
+loadGroups();
+
 // Top-bar bell (v0.8.5): a second door to the same per-service
 // notification setting as the edit dialog. The icon mirrors the
 // ACTIVE service's effective mode — plain bell for "allow", a
@@ -197,7 +252,14 @@ const updatePanel = el("updatePanel");
 const quickPanel = el("quickPanel");
 const groupPanel = el("groupPanel");
 const notifMenu = el("notifMenu");
-const allPanels = [pickerPanel, ctxPanel, editPanel, adblockPanel, confirmPanel, managePanel, dlPanel, updatePanel, quickPanel, groupPanel, notifMenu];
+const permPanel = el("permPanel");
+const groupNamePanel = el("groupNamePanel");
+// The Kelola group context menu is NOT in allPanels on purpose:
+// it opens over the (already open) Kelola panel and is shown /
+// hidden by hand (see openGroupMenu), so the panel machinery
+// never tears Kelola down underneath it.
+const groupMenu = el("groupMenu");
+const allPanels = [pickerPanel, ctxPanel, editPanel, adblockPanel, confirmPanel, managePanel, dlPanel, updatePanel, quickPanel, groupPanel, notifMenu, permPanel, groupNamePanel];
 let ctxService = null;
 
 let lastFocus = null;
@@ -209,6 +271,12 @@ let lastFocus = null;
 // that was just (re)opened.
 let panelSeq = 0;
 async function openPanel(panel) {
+  // The first-open permission dialog saves on ANY way out
+  // (v0.8.8): if another panel takes over while it is up, its
+  // current choices land first. savePermChoices is defined with
+  // the dialog further down; it no-ops when no dialog is pending.
+  if (panel !== permPanel) savePermChoices();
+  hideGroupMenu();
   panelSeq++;
   lastFocus = document.activeElement;
   for (const p of allPanels) { p.hidden = true; p.classList.remove("closing"); }
@@ -222,6 +290,10 @@ async function openPanel(panel) {
 }
 
 async function closePanels() {
+  // Same save-on-any-exit rule as openPanel: Escape, outside
+  // clicks and service switches all funnel through here.
+  savePermChoices();
+  hideGroupMenu();
   const open = allPanels.filter(p => !p.hidden);
   const seq = ++panelSeq;
   if (open.length) {
@@ -242,10 +314,18 @@ async function closePanels() {
 // thrown away, and clicking outside the discard confirmation itself
 // counts as cancelling it (back to the edit dialog).
 document.addEventListener("click", (e) => {
+  // The Kelola group menu floats over the Kelola panel: a click
+  // anywhere else closes the menu first, and a click that stays
+  // inside Kelola goes no further.
+  const path = e.composedPath ? e.composedPath() : [e.target];
+  if (!groupMenu.hidden) {
+    if (path.includes(groupMenu)) return;
+    hideGroupMenu();
+    if (path.includes(managePanel)) return;
+  }
   const open = allPanels.find(p => !p.hidden);
   if (!open) return;
   // Use composedPath: a handler may detach e.target mid-click.
-  const path = e.composedPath ? e.composedPath() : [e.target];
   if (path.includes(open)) return;
   if (path.some(n => n && n.id === "sidebar")) return;
   if (open === confirmPanel && confirmReturnTo) { cancelConfirm(); return; }
@@ -510,6 +590,7 @@ async function switchTo(s) {
   localStorage.setItem("sodium.lastActive", s.id); scheduleConfigSave();
   el("activeName").textContent = s.name;
   el("welcome").style.display = "none";
+  let openedOk = false;
   try {
     // Push this service's own zoom first: Rust stores it and applies it
     // when the webview is created (or right away if it already exists).
@@ -520,11 +601,17 @@ async function switchTo(s) {
     el("ramNote").textContent = "";
     el("ramNote").classList.remove("error");
     console.log("Sodium alive webviews:", alive);
+    openedOk = true;
   } catch (err) {
     el("welcome").style.display = "";
     el("ramNote").textContent = "Gagal membuka " + s.name + ": " + err;
     el("ramNote").classList.add("error");
   }
+  // First-open permission ask (v0.8.8): a service that has never
+  // been asked gets the one-time dialog now that it is open. This
+  // also covers every pre-v0.8.8 service on its first open after
+  // the update — none of them carries permAsked yet.
+  if (openedOk && !s.permAsked) openPermDialog(s);
 }
 
 // Service picker (first run + "+" button)
@@ -801,9 +888,15 @@ function duplicateService(srcSvc) {
   let n = 2;
   while (services.some(s => s.name === base + " " + n)) n++;
   const copy = { ...srcSvc, id: srcSvc.id + "-d" + Date.now().toString(36), name: base + " " + n };
+  // The copy is a fresh service: it has not been asked about
+  // permissions yet, so the first-open dialog appears for it too
+  // (its inherited notif/media values become the dialog's initial
+  // choices).
+  delete copy.permAsked;
   services.push(copy);
   store.save(services);
   pushNotifPolicy(copy);
+  pushMediaPolicy(copy);
   render();
   return copy;
 }
@@ -857,6 +950,7 @@ function editFormState() {
     pin: el("editPin").checked,
     disabled: el("editDisabled").checked,
     notif: el("editNotif").value,
+    media: el("editMedia").value,
     draft: editDraft,
   });
 }
@@ -871,7 +965,14 @@ function catalogFor(s) {
 function refreshGroupDatalist() {
   const dl = el("groupNames");
   dl.innerHTML = "";
-  for (const g of [...new Set(services.map(groupOf).filter(Boolean))].sort()) {
+  // The persistent group list (which already unions in every
+  // service-derived group) plus any straggler, sorted.
+  const all = [...groups];
+  for (const s of services) {
+    const g = groupOf(s);
+    if (g && !all.some(x => sameGroupName(x, g))) all.push(g);
+  }
+  for (const g of all.sort()) {
     const o = document.createElement("option");
     o.value = g;
     dl.appendChild(o);
@@ -896,6 +997,7 @@ async function openEditDialog(s) {
   el("editPin").checked = pinned.has(s.id);
   el("editDisabled").checked = disabled.has(s.id);
   el("editNotif").value = notifModeOf(s);
+  el("editMedia").value = mediaModeOf(s);
   el("editIconMsg").textContent = "";
   el("editErr").hidden = true;
   el("editAdblockBtn").hidden = !isYouTubeService(s);
@@ -1100,10 +1202,19 @@ el("editSave").addEventListener("click", async () => {
   s.name = name;
   const grp = el("editGroup").value.trim();
   if (grp) s.group = grp; else delete s.group;
+  // A group name typed here joins the persistent group list
+  // (v0.8.8), so the group survives even its last service leaving.
+  if (grp && !groups.some(g => sameGroupName(g, grp))) {
+    groups.push(grp);
+    saveGroups();
+  }
   // Notification mode: only non-default values are stored, like
   // the group above; "allow" is the absence of the field.
   const wantNotif = el("editNotif").value;
   if (wantNotif === "default" || wantNotif === "deny") s.notif = wantNotif; else delete s.notif;
+  // Microphone/camera mode: same storage semantics as notif.
+  const wantMedia = el("editMedia").value;
+  if (wantMedia === "default" || wantMedia === "deny") s.media = wantMedia; else delete s.media;
 
   // Icon draft: the chosen mode clears whatever it overrides, so
   // the explicit choice always wins over the brand logo.
@@ -1131,6 +1242,7 @@ el("editSave").addEventListener("click", async () => {
   store.save(services);
   if (wantPin !== pinned.has(s.id)) togglePin(s);
   pushNotifPolicy(s);
+  pushMediaPolicy(s);
   render();
 
   if (urlChanged) {
@@ -1256,10 +1368,11 @@ function mgIconButton(icon, cls, title, onClick) {
 // the grip tracks pointer events directly instead: the dragged
 // row follows the cursor via a transform while the other rows
 // stay put in the layout.
-let mgDrag = null; // { from, startY, startScroll, insertBefore, row, geo }
+let mgDrag = null; // { from, startY, startScroll, insertBefore, groupDrop, row, geo }
 
 function clearDragMarks() {
   for (const r of manageList.querySelectorAll(".mgRow")) r.classList.remove("dropAbove", "dropBelow");
+  for (const sl of manageList.querySelectorAll(".mgDropSlot")) sl.classList.remove("dropTarget");
 }
 
 // Where would the dragged row land if dropped at this pointer Y?
@@ -1273,6 +1386,13 @@ function clearDragMarks() {
 function mgInsertPoint(clientY) {
   if (mgDrag && mgDrag.geo) {
     const contentY = (clientY - mgDrag.geo.listTop) + manageList.scrollTop;
+    // An empty group's drop slot wins inside its own span: the
+    // drop there assigns the group instead of reordering.
+    for (const sl of mgDrag.geo.slots || []) {
+      if (contentY >= sl.top && contentY <= sl.bottom) {
+        return { groupDrop: sl.group, mark: sl.el };
+      }
+    }
     let lastOther = null;
     for (const it of mgDrag.geo.items) {
       lastOther = it.row;
@@ -1294,12 +1414,60 @@ function mgInsertPoint(clientY) {
   return { before: services.length, mark: lastOther, below: true };
 }
 
+// One group header row inside the Kelola list. Non-empty groups
+// get one where their first row appears (mirroring the sidebar's
+// separators); empty groups get a dimmed one above their drop
+// slot. Right-click (or the context-menu key) opens the small
+// group menu — its only item deletes the group, and only for
+// empty groups.
+function mgGroupHeader(name, empty) {
+  const h = document.createElement("div");
+  h.className = "mgGroupHead" + (empty ? " empty" : "");
+  h.dataset.group = name;
+  const nm = document.createElement("span");
+  nm.className = "mgGroupName";
+  nm.textContent = name;
+  h.appendChild(nm);
+  if (empty) {
+    const tag = document.createElement("span");
+    tag.className = "mgGroupTag";
+    tag.textContent = "Kosong";
+    h.appendChild(tag);
+  }
+  h.title = "Kelompok " + name;
+  h.tabIndex = 0;
+  h.setAttribute("role", "button");
+  h.setAttribute("aria-haspopup", "menu");
+  h.setAttribute("aria-label", "Kelompok " + name + " — klik kanan atau tombol menu untuk opsi kelompok");
+  h.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    openGroupMenu(name, h);
+  });
+  h.addEventListener("keydown", (e) => {
+    if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+      e.preventDefault();
+      openGroupMenu(name, h);
+    }
+  });
+  return h;
+}
+
 function renderManage() {
+  hideGroupMenu();
   el("showNamesToggle").checked = showNames;
   el("iconSizeSel").value = String(iconSize);
   refreshGroupDatalist();
   manageList.innerHTML = "";
+  let prevGroup = null;
   services.forEach((s, idx) => {
+    // Group header: the first row of a named group is preceded
+    // by its header, like the sidebar's separators. Empty groups
+    // render after the rows (below).
+    const g = groupOf(s);
+    if (g && g !== prevGroup) {
+      manageList.appendChild(mgGroupHeader(canonicalGroup(g), false));
+    }
+    prevGroup = g;
     const row = document.createElement("div");
     row.className = "mgRow" + (disabled.has(s.id) ? " off" : "");
     row.dataset.idx = String(idx);
@@ -1355,7 +1523,20 @@ function renderManage() {
             row: r,
           });
         }
-        mgDrag.geo = { listTop: listRect.top, listBottom: listRect.bottom, items };
+        // Empty-group drop slots are measured in the same pass,
+        // in the same content coordinates, so the move handler
+        // treats them exactly like row targets (no extra reads).
+        const slots = [];
+        for (const sl of manageList.querySelectorAll(".mgDropSlot")) {
+          const rect = sl.getBoundingClientRect();
+          slots.push({
+            group: sl.dataset.group,
+            top: (rect.top - listRect.top) + mgDrag.startScroll,
+            bottom: (rect.bottom - listRect.top) + mgDrag.startScroll,
+            el: sl,
+          });
+        }
+        mgDrag.geo = { listTop: listRect.top, listBottom: listRect.bottom, items, slots };
       }
       row.classList.add("dragging");
       manageList.classList.add("dragging");
@@ -1371,8 +1552,10 @@ function renderManage() {
         row.style.transform = "translateY(" + dy + "px)";
         const p = mgInsertPoint(ev.clientY);
         mgDrag.insertBefore = p.before;
+        mgDrag.groupDrop = p.groupDrop || null;
         clearDragMarks();
-        if (p.mark) p.mark.classList.add(p.below ? "dropBelow" : "dropAbove");
+        if (p.groupDrop) p.mark.classList.add("dropTarget");
+        else if (p.mark) p.mark.classList.add(p.below ? "dropBelow" : "dropAbove");
       };
       const onUp = () => {
         grip.removeEventListener("pointermove", onMove);
@@ -1380,8 +1563,21 @@ function renderManage() {
         grip.removeEventListener("pointercancel", onUp);
         if (!mgDrag) return;
         const from = mgDrag.from;
+        const groupDrop = mgDrag.groupDrop || null;
         let to = mgDrag.insertBefore;
         mgDrag = null;
+        if (groupDrop) {
+          // Dropped on an empty group's slot: assign the group,
+          // keep the row's position in the list.
+          const svc = services[from];
+          if (svc && !sameGroupName(groupOf(svc), groupDrop)) {
+            svc.group = groupDrop;
+            store.save(services);
+            render();
+          }
+          renderManage();
+          return;
+        }
         if (to > from) to -= 1;
         if (to !== from && to >= 0 && to < services.length) {
           const [it] = services.splice(from, 1);
@@ -1435,6 +1631,24 @@ function renderManage() {
     row.append(grip, ic, info, slot, acts);
     manageList.appendChild(row);
   });
+  // Empty groups (v0.8.8): dimmed header + dashed drop slot, in
+  // the persistent list's order. Dropping a service row on a slot
+  // assigns it to that group (see the drag handlers above).
+  for (const name of groups) {
+    if (!groupIsEmpty(name)) continue;
+    manageList.appendChild(mgGroupHeader(name, true));
+    const slotEl = document.createElement("div");
+    slotEl.className = "mgDropSlot";
+    slotEl.dataset.group = name;
+    slotEl.textContent = "Seret layanan ke sini";
+    manageList.appendChild(slotEl);
+  }
+  const addGroup = document.createElement("button");
+  addGroup.type = "button";
+  addGroup.className = "mgAddGroup";
+  addGroup.textContent = "+ Kelompok baru";
+  addGroup.addEventListener("click", openGroupNamePrompt);
+  manageList.appendChild(addGroup);
 }
 
 function askDeleteService(s) {
@@ -1446,6 +1660,92 @@ function askDeleteService(s) {
     onOk: async () => { await deleteService(s.id); renderManage(); },
   });
 }
+
+// ------------------------------------------------------------------
+// Group menu + new-group prompt (v0.8.8). The menu is an anchored
+// popover in the notification menu's style (clamped to the window,
+// growing from its invocation point), but it is shown and hidden
+// by hand — not through openPanel — because it floats over the
+// Kelola panel, which must stay open underneath. Dismissal paths:
+// outside click and Escape are intercepted in their global
+// handlers; openPanel / closePanels / renderManage also hide it.
+let groupMenuCtx = null; // { name, anchor }
+function openGroupMenu(name, anchor) {
+  hideGroupMenu();
+  const empty = groupIsEmpty(name);
+  groupMenuCtx = { name, anchor };
+  el("groupMenuTitle").textContent = "Kelompok " + name;
+  const del = el("groupMenuDelete");
+  del.setAttribute("aria-disabled", empty ? "false" : "true");
+  del.title = empty ? "" : "Hanya kelompok kosong yang bisa dihapus";
+  groupMenu.hidden = false;
+  // Anchor under the header row, clamped inside the window; open
+  // upward when the space below is not enough.
+  const r = anchor.getBoundingClientRect();
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - 224));
+  groupMenu.style.left = left + "px";
+  const menuH = groupMenu.offsetHeight;
+  const upward = r.bottom + 6 + menuH > window.innerHeight && r.top - 6 - menuH >= 8;
+  groupMenu.style.top = (upward ? r.top - 6 - menuH : r.bottom + 6) + "px";
+  // The popover grows from the header (same rule as the bell menu).
+  const originX = Math.max(0, Math.min(r.left + r.width / 2 - left, 208));
+  groupMenu.style.transformOrigin = originX + "px " + (upward ? "100%" : "0px");
+  if (empty) del.focus();
+  else groupMenu.focus();
+}
+function hideGroupMenu() {
+  if (groupMenu.hidden) { groupMenuCtx = null; return; }
+  groupMenu.hidden = true;
+  const anchor = groupMenuCtx && groupMenuCtx.anchor;
+  groupMenuCtx = null;
+  if (anchor && document.contains(anchor)) anchor.focus();
+}
+el("groupMenuDelete").addEventListener("click", () => {
+  if (!groupMenuCtx) return;
+  if (el("groupMenuDelete").getAttribute("aria-disabled") === "true") return;
+  const name = groupMenuCtx.name;
+  hideGroupMenu();
+  // Deleting an empty group only drops its name from the list —
+  // no service references it, so nothing else changes.
+  groups = groups.filter(g => !sameGroupName(g, name));
+  saveGroups();
+  renderManage();
+});
+
+// New-group prompt: a small centred modal in the panel system.
+// Saving returns to Kelola, where the group appears at once as a
+// dimmed header + drop slot; cancelling returns there too.
+async function openGroupNamePrompt() {
+  el("groupNameInput").value = "";
+  el("groupNameErr").hidden = true;
+  await openPanel(groupNamePanel);
+  el("groupNameInput").focus();
+}
+function saveGroupName() {
+  const name = el("groupNameInput").value.trim();
+  const err = el("groupNameErr");
+  if (!name) {
+    err.textContent = "Nama kelompok wajib diisi.";
+    err.hidden = false;
+    el("groupNameInput").focus();
+    return;
+  }
+  if (groups.some(g => sameGroupName(g, name))) {
+    err.textContent = "Kelompok \"" + name + "\" sudah ada. Pakai nama lain.";
+    err.hidden = false;
+    el("groupNameInput").focus();
+    return;
+  }
+  groups.push(name);
+  saveGroups();
+  openManage();
+}
+el("groupNameSave").addEventListener("click", saveGroupName);
+el("groupNameCancel").addEventListener("click", async () => { await openManage(); });
+el("groupNameInput").addEventListener("input", () => { el("groupNameErr").hidden = true; });
+el("groupNameInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); saveGroupName(); }
+});
 
 // Link popup
 //
@@ -1634,6 +1934,64 @@ for (const b of notifMenu.querySelectorAll(".popItem")) {
     await closePanels();
   });
 }
+
+// ------------------------------------------------------------------
+// First-open permission dialog (v0.8.8). WebView2 has no native
+// permission prompt, so Sodium asks once itself: the first time a
+// service is opened successfully and it has never been asked
+// (permAsked absent), this centred modal offers Izinkan / Tolak
+// for notifications, microphone and camera. Microphone and camera
+// share the one media policy, so their two segmented rows move
+// together. ANY way out of the dialog — Simpan, Escape, outside
+// click, another panel taking over — saves the choices currently
+// shown: openPanel and closePanels both call savePermChoices()
+// before doing anything else, and it no-ops once saved.
+let permSvc = null;
+let permChoice = { notif: "allow", media: "allow" };
+function openPermDialog(s) {
+  permSvc = s;
+  // Initial values come from the service's stored modes; the
+  // dialog only knows Izinkan / Tolak, so a stored "default"
+  // starts at Izinkan (the historical behaviour).
+  permChoice = {
+    notif: notifModeOf(s) === "deny" ? "deny" : "allow",
+    media: mediaModeOf(s) === "deny" ? "deny" : "allow",
+  };
+  el("permTitle").textContent = "Izin untuk " + s.name;
+  paintPermDialog();
+  openPanel(permPanel);
+}
+function paintPermDialog() {
+  for (const b of permPanel.querySelectorAll("[data-perm-kind]")) {
+    const on = permChoice[b.dataset.permKind] === b.dataset.permVal;
+    b.classList.toggle("sel", on);
+    b.setAttribute("aria-checked", on ? "true" : "false");
+  }
+}
+function savePermChoices() {
+  const s = permSvc;
+  if (!s) return;
+  permSvc = null;
+  // Same storage semantics as the edit dialog: "allow" (and the
+  // dialog's Izinkan) is the absence of the field.
+  if (permChoice.notif === "deny") s.notif = "deny"; else delete s.notif;
+  if (permChoice.media === "deny") s.media = "deny"; else delete s.media;
+  s.permAsked = true;
+  store.save(services);
+  pushNotifPolicy(s);
+  pushMediaPolicy(s);
+  render();
+}
+for (const b of permPanel.querySelectorAll("[data-perm-kind]")) {
+  b.addEventListener("click", () => {
+    permChoice[b.dataset.permKind] = b.dataset.permVal;
+    paintPermDialog();
+  });
+}
+el("permSave").addEventListener("click", async () => {
+  savePermChoices();
+  await closePanels();
+});
 
 // Update check against the public GitHub repo: the latest release
 // is compared with the running version. The installer downloads
@@ -2076,6 +2434,7 @@ async function applyImport(snap) {
   services = store.load();
   pinned = store.pinned();
   disabled = store.disabled();
+  loadGroups();
   showNames = localStorage.getItem("sodium.showNames") === "1";
   iconSize = parseInt(localStorage.getItem("sodium.iconSize") || "48", 10) || 48;
   applyIconSize();
@@ -2087,7 +2446,7 @@ async function applyImport(snap) {
   // Push the restored settings into Rust.
   invoke("set_max_alive", { max: Number(localStorage.getItem("sodium.maxAlive") || "1") });
   for (const id of pinned) invoke("set_pinned", { id, pinned: true });
-  for (const s of services) pushNotifPolicy(s);
+  for (const s of services) { pushNotifPolicy(s); pushMediaPolicy(s); }
   for (const id of oldPinned) {
     if (!pinned.has(id)) invoke("set_pinned", { id, pinned: false });
   }
@@ -2126,6 +2485,7 @@ window.addEventListener("keydown", async (e) => {
     return;
   }
   if (e.key === "Escape") {
+    if (!groupMenu.hidden) { hideGroupMenu(); return; }
     if (linkPopupOpen) { await closeLinkPopup(); return; }
     const open = allPanels.find(p => !p.hidden);
     if (open) {
@@ -2201,10 +2561,10 @@ async function init() {
   // Restore pinned flags into the Rust side on startup
   for (const id of pinned) invoke("set_pinned", { id, pinned: true });
 
-  // Notification policies go to Rust too, before any service
-  // webview is created below: the permission handler on each
-  // webview reads them on every request.
-  for (const s of services) pushNotifPolicy(s);
+  // Notification and media policies go to Rust too, before any
+  // service webview is created below: the permission handler on
+  // each webview reads them on every request.
+  for (const s of services) { pushNotifPolicy(s); pushMediaPolicy(s); }
   render();
 
   // One-time favicon fetch for services that still have no icon image
@@ -2255,6 +2615,7 @@ async function applyConfigFromRust() {
     services = store.load();
     pinned = store.pinned();
     disabled = store.disabled();
+    loadGroups();
     showNames = localStorage.getItem("sodium.showNames") === "1";
     iconSize = parseInt(localStorage.getItem("sodium.iconSize") || "48", 10) || 48;
     applyIconSize();

@@ -233,3 +233,82 @@ langsung meminta scan QR, seolah sesinya tidak pernah tersimpan.
   (v0.8.2) dan hard-kill saat shutdown (v0.8.3) ternyata BUKAN
   penyebab utamanya; keduanya tetap perbaikan yang sah, tapi obat
   sebenarnya adalah rilis ini.
+
+## 13. Catatan v0.8.8 (28 Nov 2026)
+
+Dua paket: penyempurnaan sistem izin (mikrofon & kamera + tanya
+izin di awal) dan petunjuk kelompok kosong di Kelola. Versi
+tetap patch: paket pertama menyempurnakan sistem izin per
+layanan yang sudah ada sejak v0.8.4 (bukan kemampuan yang sama
+sekali baru), dan paket kedua adalah quick win pada panel Kelola
+yang sudah ada.
+
+### Paket A — Izin mikrofon & kamera + tanya izin di awal
+
+- Sebelumnya handler `.on_permission_request` di webview layanan
+  hanya menjawab notifikasi (dari `notif_policy`); mikrofon dan
+  kamera jatuh ke `PermissionResponse::Default`, yang di
+  WebView2 praktiknya ditolak diam-diam — panggilan suara/video
+  (WhatsApp Call, Meet) tidak pernah bisa mendapat mic/kamera.
+- Rust: peta `media_policy` di AppState sejajar `notif_policy`,
+  command baru `set_service_media(id, mode)` dengan semantik
+  identik `set_service_notif` ("allow"|"default"|"deny", absen =
+  allow), dan handler izin kini menjawab
+  `PermissionKind::Microphone | PermissionKind::Camera` dari
+  peta itu (nama varian terverifikasi dari dokumentasi crate
+  tauri 2.12.7, versi yang dikunci Cargo.lock). Handler level
+  Builder aplikasi tidak berubah.
+- Frontend: field `media` di objek layanan (hanya nilai
+  non-bawaan yang disimpan, pola sama seperti `notif`),
+  `pushMediaPolicy(s)` dipanggil di semua tempat yang sama
+  dengan `pushNotifPolicy(s)` (startup, simpan edit, impor
+  config, duplikat), dan select kedua "Mikrofon & kamera" di
+  dialog edit di samping select "Notifikasi". Tombol lonceng di
+  bar atas tetap khusus notifikasi.
+- Dialog tanya izin di awal: field boolean `permAsked` di objek
+  layanan. Saat sebuah layanan berhasil dibuka dan belum pernah
+  ditanya, satu dialog modal terpusat menanyakan Notifikasi /
+  Mikrofon / Kamera (Izinkan/Tolak; mikrofon dan kamera berbagi
+  satu kebijakan media, jadi kedua barisnya bergerak bersama),
+  dengan nilai awal dari field `notif`/`media` yang sudah ada
+  (bawaan Izinkan semua) dan catatan bahwa pilihan bisa diubah
+  kapan saja di dialog edit. Cara menutup apa pun — Simpan,
+  Escape, klik luar, panel lain mengambil alih — menyimpan
+  pilihan yang sedang tampil (openPanel dan closePanels sama-sama
+  memanggil `savePermChoices()` lebih dulu), men-set
+  `permAsked`, dan dialog tidak pernah muncul lagi untuk layanan
+  itu. Layanan lama (pra-0.8.8) semuanya ditanya sekali saat
+  pertama dibuka setelah update — disengaja. Duplikat layanan
+  tidak mewarisi `permAsked` (ditanya lagi; nilai izin warisannya
+  jadi nilai awal dialog).
+
+### Paket B — Petunjuk kelompok kosong di Kelola
+
+- Daftar kelompok persisten: `sodium.groups` (localStorage,
+  mirror config.json lewat CFG_KEYS, ikut payload ekspor/impor)
+  menyimpan nama kelompok terurut termasuk yang kosong. Saat
+  muat, daftar digabung dengan kelompok turunan layanan (urutan
+  kemunculan pertama); nama dibandingkan tanpa memedulikan
+  kapital. Nama kelompok baru dari dialog edit ikut masuk daftar.
+- Render Kelola: kelompok berisi mendapat baris header di depan
+  baris pertamanya (seperti pemisah sidebar); kelompok KOSONG
+  tampil sebagai header redup berlabel "Kosong" + baris slot
+  bergaris putus-putus "Seret layanan ke sini" setinggi kira-kira
+  sebaris layanan. Slot adalah target drop yang sah dalam sistem
+  seret Kelola yang ada (geometrinya ikut di-cache saat dragstart
+  dalam koordinat konten yang sama, pola anti-thrash v0.8.6);
+  menjatuhkan layanan di sana men-set kelompok layanan itu tanpa
+  mengubah urutannya.
+- Tombol "+ Kelompok baru" di bagian bawah daftar Kelola membuka
+  prompt modal kecil (satu input + Simpan/Batal); nama yang sama
+  dengan kelompok yang ada (abaikan kapital) ditolak dengan teks
+  error di prompt.
+- Menu konteks (klik kanan / tombol Menu) pada baris header
+  kelompok di Kelola berisi item "Hapus kelompok", hanya aktif
+  untuk kelompok kosong; menghapus kelompok kosong hanya membuang
+  namanya dari daftar. Menu ini popover mengambang di atas panel
+  Kelola (ditampilkan manual, bukan lewat openPanel) agar Kelola
+  tetap terbuka di bawahnya.
+- Sidebar utama tidak berubah: kelompok kosong tidak merender
+  pemisah apa pun (render sidebar tetap diturunkan dari layanan).
+  Layanan tanpa kelompok tampil persis seperti sebelumnya.

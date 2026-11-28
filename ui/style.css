@@ -260,3 +260,38 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .adblockMeta{display:flex;flex-direction:column;gap:6px;margin:14px 0}
 .adblockMeta div{display:flex;justify-content:space-between;font-size:13px}
 .adblockMeta span{color:var(--muted)}
+
+/* First-open permission dialog (v0.8.8): one centred modal, three
+   Izinkan/Tolak segmented rows in the edit dialog's pill style. */
+#permPanel{width:min(440px,calc(100vw - 108px))}
+.permIntro{font-size:13px;margin:10px 0 4px}
+.permRows{display:flex;flex-direction:column;margin-top:6px}
+.permRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)}
+.permRow:last-child{border-bottom:0}
+.permLabel{font-size:13px;color:var(--text-2)}
+.permSeg{display:flex;gap:6px;flex:none}
+.permSeg button{padding:7px 12px;border-radius:99px;border:1px solid var(--border-strong);background:var(--raised);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer}
+.permSeg button:hover{background:var(--hover);color:var(--text)}
+.permSeg button.sel{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.permNote{font-size:12px;margin:10px 0 0}
+
+/* New-group prompt (v0.8.8): one text input, same field styling as
+   the other dialog forms. */
+#groupNamePanel{width:min(400px,calc(100vw - 108px))}
+.groupNameLabel{display:block;font-size:12px;color:var(--muted);margin-top:12px}
+#groupNameInput{display:block;width:100%;margin-top:4px;padding:9px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg);color:var(--text)}
+
+/* Kelola group headers, empty-group drop slot and the new-group
+   button (v0.8.8). Headers are quiet separators inside the list;
+   empty groups are dimmed and carry a dashed slot about one
+   service row tall that highlights while a drag hovers it. */
+.mgGroupHead{display:flex;align-items:center;gap:8px;padding:8px 4px 0;font-size:12px;font-weight:700;color:var(--text-2);border-radius:6px}
+.mgGroupHead.empty{color:var(--faint)}
+.mgGroupName{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mgGroupTag{font-size:10px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid var(--border-strong);color:var(--faint);white-space:nowrap}
+.mgDropSlot{border:1.5px dashed var(--border-strong);border-radius:12px;min-height:56px;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:12px;padding:10px 12px;text-align:center}
+.mgDropSlot.dropTarget{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.mgAddGroup{width:100%;padding:9px;border-radius:10px;border:1px dashed #3a3d46;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.mgAddGroup:hover{background:var(--raised);color:var(--text)}
+.popItem[aria-disabled="true"]{opacity:.45;cursor:default}
+.popItem[aria-disabled="true"]:hover{background:transparent}
