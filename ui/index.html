@@ -38,6 +38,7 @@
         </select>
       </label>
       <span id="dlPill" role="status" aria-live="polite" hidden></span>
+      <button id="mediaBtn" class="toolBtn" title="Media yang sedang diputar" aria-label="Panel media"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5z"/></svg><span id="mediaDot" class="mediaDot" hidden></span></button>
       <button id="dlBtn" class="toolBtn" title="Riwayat unduhan" aria-label="Riwayat unduhan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m6.5 10.5 5.5 5.5 5.5-5.5"/><path d="M4.5 20h15"/></svg></button>
       <button id="updateBtn" class="toolBtn wide" title="Periksa update Sodium">Cek update<span id="updateDot" class="updateDot" hidden></span></button>
       <span id="appVersion" class="appVersion"></span>
@@ -170,6 +171,16 @@
     <div id="dlList" class="manageList"></div>
     <div class="pickerFoot">
       <button id="dlClose" class="btnGhost">Tutup</button>
+    </div>
+  </div>
+
+  <div id="mediaPanel" class="picker" hidden>
+    <div class="pickerHead">
+      <h2>Media</h2>
+    </div>
+    <div id="mediaList" class="manageList"></div>
+    <div class="pickerFoot">
+      <button id="mediaClose" class="btnGhost">Tutup</button>
     </div>
   </div>
 

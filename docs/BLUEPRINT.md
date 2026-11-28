@@ -422,3 +422,127 @@ mengetes v0.9.0 di layarnya:
   gerbang split gagal; handler-nya memang sudah lewat
   setCompanion, jadi panel kanan berganti tanpa menutup
   webview pendamping lama.
+
+## 16. Catatan v0.10.0 (28 Nov 2026) — Jalur B tahap 1
+
+Kemampuan baru: jembatan komunikasi halaman↔Sodium, lalu
+fitur media di atasnya. Sampai v0.9.1 suntikan JS Sodium
+satu arah (halaman tidak bisa melapor balik) karena Tauri
+tidak memberi jalur IPC ke halaman luar.
+
+### Jembatan yang dipilih: WebView2 WebMessage
+
+- Halaman memanggil `window.chrome.webview.postMessage`
+  (JSON string); host mendengarkan event CoreWebView2
+  `WebMessageReceived`. Controller didapat lewat
+  `Webview::with_webview` → `PlatformWebview::controller()`
+  (terverifikasi dari source tauri 2.12.7 yang terkunci di
+  Cargo.lock), handler dipasang dengan pola yang sama
+  persis dengan yang dipakai wry 0.57.3 sendiri untuk IPC
+  Tauri (`WebMessageReceivedEventHandler::create` +
+  `TryGetWebMessageAsString` + `take_pwstr` dari
+  webview2-com 0.39.1). Kedua handler hidup berdampingan —
+  event WebView2 memang multi-subscriber — dan parser kita
+  mengabaikan semua yang bukan laporan jembatan.
+- webview2-com 0.39.1 dan windows 0.62.2 dipromosikan jadi
+  dependensi langsung (keduanya sudah ada di Cargo.lock
+  sebagai dependensi transitif wry/tauri di versi yang
+  sama persis — tidak ada unduhan atau versi baru).
+- Ditolak: (a) capability remote Tauri 2 — URL layanan
+  Sodium arbitrer dari pengguna, jadi capability harus
+  wildcard dan memberi akses invoke ke halaman luar mana
+  pun yang pernah dimuat; WebMessage tidak membuka
+  permukaan invoke sama sekali. (b) Jembatan localhost
+  bertoken — tidak diperlukan karena jalur 1 layak;
+  menghindari server pendengar ekstra, distribusi token,
+  dan gesekan mixed-content/PNA.
+- Keamanan: pesan halaman = input tak tepercaya. Payload
+  dibatasi 8 KB sebelum parse; hanya dua bentuk laporan
+  yang dikenal (`media`, `notif`, versi 1); semua field
+  dicek tipe + dipotong panjangnya; status adalah enum.
+  Tidak ada bentuk pesan yang bisa mencapai command, shell,
+  atau eval. Arah baliknya: Sodium hanya meng-eval skrip
+  kontrol TETAP miliknya (`window.__sodiumMedia` dengan
+  angka seek dan selector dari kita) lewat command
+  `media_control` yang action-nya whitelist.
+
+### Skrip jembatan bersama (bridge/media.js)
+
+Disuntikkan ke SEMUA webview layanan sebagai initialization
+script frame utama (mekanisme yang sama dengan adblock,
+terpisah darinya), selalu aktif:
+
+- Deteksi elemen video HTML5 (scan awal + MutationObserver)
+  dan Media Session (judul/artist + status dari elemen
+  aktif); lapor setiap perubahan berarti (dedupe + throttle
+  di skrip, dedupe lagi di Rust) plus polling 2 detik
+  sebagai penopang (metadata Media Session tidak punya
+  event perubahan).
+- Handle stabil `window.__sodiumMedia`: elemen media aktif
+  + toggle play/pause, seek relatif, next/prev YouTube.
+- Tombol PiP melayang ala Firefox: overlay di pojok video
+  saat pointer melayang di atasnya (hit-test berdasarkan
+  rect, bukan target event — player seperti YouTube menutup
+  elemen videonya dengan lapisan overlay), klik memanggil
+  `requestPictureInPicture()` (suntikan aplikasi terhitung
+  gestur pengguna; menu klik-kanan WebView2 memang tidak
+  punya entri PiP karena itu UI shell browser). Menghormati
+  `disablePictureInPicture`, mengabaikan video kecil
+  (< 180×100).
+- Pencatat notifikasi untuk tahap 2: hook konstruktor
+  `Notification` halaman + `ServiceWorkerRegistration.
+  showNotification` (panggilan sisi halaman), diteruskan
+  lewat jembatan; Rust menyimpan di state in-memory saja
+  (maks 200, tanpa UI, tanpa persistensi — panelnya
+  v0.11.0). Batasan jujur: notifikasi yang dibangkitkan
+  murni di dalam service worker tanpa panggilan sisi
+  halaman tidak terlihat dari sini.
+
+### Sisi Rust
+
+- Penerima jembatan per webview layanan dipasang di
+  `attach_media_bridge` saat webview dibuat
+  (`create_service_webview`); state per layanan
+  `media_state` {judul, artist, status playing/paused/none,
+  pip} + daftar `page_notifications` in-memory. Perubahan
+  dikirim ke UI sebagai event "media-changed"; snapshot
+  awal lewat command `media_states`.
+- Bebas-LRU untuk media: layanan yang sedang memutar media
+  atau memegang PiP masuk set terlindung di `evict_down_to`,
+  digabung dengan pola yang sudah ada (pin + pasangan
+  split) — bukan mekanisme paralel. Perlindungan lepas
+  setelah jeda/akhir lewat recheck debounce ±60 detik
+  (pola generation counter yang sama dengan gerbang split),
+  jadi jeda singkat tidak mengorbankan player. State media
+  dibersihkan saat webview dimusnahkan (eviction/close),
+  seperti badge unread.
+- Command kontrol: `media_control` (toggle, seek-back,
+  seek-fwd, next, prev — next/prev hanya bermakna di
+  YouTube) via `webview.eval` ke handle tetap di atas.
+
+### Panel media (UI)
+
+- Tombol baru di bar atas (ikon putar SVG, tanpa emoji)
+  dengan titik aksen saat ada yang sedang diputar/PiP;
+  panelnya mengikuti pola panel yang ada (bingkai .picker,
+  daftar .manageList — max-height + scroll internal, gerbang
+  fit berlaku): per layanan yang punya media — judul,
+  artist/channel, status — dengan kontrol putar/jeda,
+  seek −10/+10 detik, dan prev/next khusus baris YouTube.
+  Keadaan kosong: "Tidak ada media yang diputar".
+
+### Batasan yang diketahui
+
+- Event WebMessageReceived hanya terpicu untuk postMessage
+  dari dokumen frame utama, dan skrip disuntikkan di frame
+  utama: media di dalam iframe lintas-origin (pemutar embed
+  di situs lain) tidak terdeteksi di tahap 1. Layanan media
+  utama (YouTube, Spotify, dll.) memutar di frame utama
+  halamannya sendiri.
+- PiP adalah jendela OS yang menempel pada webview
+  layanannya: menutup/mengevict webview itu mengakhiri PiP
+  (karena itu PiP ikut dilindungi dari eviction selama
+  aktif).
+- Bukti akhir jembatan (pesan halaman tampil di UI) baru
+  terverifikasi setelah Agung mengetes rilis ini di
+  perangkatnya.

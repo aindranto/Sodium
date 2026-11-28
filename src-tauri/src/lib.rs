@@ -69,6 +69,21 @@ struct AppState {
     /// handler on the service webview itself (see
     /// create_service_webview).
     media_policy: Mutex<HashMap<String, String>>,
+    /// Now-playing state per service id, reported by the media
+    /// bridge script (v0.10.0) over WebView2 WebMessage — see
+    /// handle_bridge_message. Drives the media panel and the
+    /// eviction protection for services that are playing.
+    media_state: Mutex<HashMap<String, MediaInfo>>,
+    /// Page notifications recorded by the bridge script
+    /// (v0.10.0): in-memory groundwork for the v0.11.0 panel —
+    /// no UI reads this yet and nothing persists it. Capped in
+    /// handle_bridge_message.
+    page_notifications: Mutex<Vec<PageNotification>>,
+    /// Generation counter debouncing the media-protection
+    /// eviction recheck, same pattern as gate_gen: a pause only
+    /// schedules a check, and only the newest scheduled check
+    /// actually re-runs eviction after the grace period.
+    media_evict_gen: std::sync::atomic::AtomicU64,
     /// Label of the service webview currently shown. Alive service
     /// webviews are stacked native controls, so exactly one may
     /// occupy the service area at a time: this one. The rest are
@@ -146,6 +161,67 @@ struct AppState {
 /// lives in adblock/ at the repo root so it can be updated without
 /// an app release).
 const BUNDLED_YT_ADBLOCK: &str = include_str!("../../adblock/youtube.js");
+
+/// The shared media bridge script (v0.10.0), injected into every
+/// service webview: media detection + Media Session reporting,
+/// the floating PiP button, the control handle for Sodium's
+/// media commands, and page-notification recording. It lives in
+/// bridge/ at the repo root, next to adblock/, so it stays a
+/// readable, separately checkable file.
+const BRIDGE_SCRIPT: &str = include_str!("../../bridge/media.js");
+
+/// Now-playing state one service's page reported through the
+/// media bridge (v0.10.0).
+#[derive(Clone, PartialEq)]
+struct MediaInfo {
+    title: String,
+    artist: String,
+    /// "playing" | "paused" | "none".
+    status: String,
+    /// A picture-in-picture window is open for this page.
+    pip: bool,
+}
+
+/// MediaInfo plus its service id: the shape the UI consumes,
+/// both as the "media-changed" event payload and as the
+/// media_states snapshot entries.
+#[derive(Clone, serde::Serialize)]
+struct MediaStateEntry {
+    id: String,
+    title: String,
+    artist: String,
+    status: String,
+    pip: bool,
+}
+
+fn media_entry(id: &str, info: &MediaInfo) -> MediaStateEntry {
+    MediaStateEntry {
+        id: id.to_string(),
+        title: info.title.clone(),
+        artist: info.artist.clone(),
+        status: info.status.clone(),
+        pip: info.pip,
+    }
+}
+
+/// One page notification the bridge script recorded (v0.10.0).
+/// In-memory only — no UI, no persistence; the panel is
+/// v0.11.0. `at_ms` is Sodium's own receive time: the page's
+/// clock is not trusted.
+#[derive(Clone, serde::Serialize)]
+struct PageNotification {
+    service_id: String,
+    title: String,
+    body: String,
+    at_ms: u64,
+}
+
+fn unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 /// youtube.com and any of its subdomains (www., m., music., ...).
 fn is_youtube_host(host: &str) -> bool {
@@ -651,6 +727,13 @@ fn create_service_webview(
             }
             _ => PermissionResponse::Default,
         });
+    // Media bridge (v0.10.0): every service page gets the shared
+    // bridge script as an initialization script (main frame),
+    // independent of the YouTube adblock below. It reports media
+    // state and page notifications back over WebView2 WebMessage;
+    // the receiving end is attached right after the webview is
+    // created (see attach_media_bridge).
+    builder = builder.initialization_script(BRIDGE_SCRIPT);
     // YouTube adblock: YouTube services get the adblock script as an
     // initialization script (it runs before the page's own scripts).
     // Webviews that are already alive are not touched — the script
@@ -666,10 +749,247 @@ fn create_service_webview(
         }
     }
     let (pos, size) = service_bounds(window);
-    window
+    let wv = window
         .add_child(builder, pos, size)
         .map_err(|e| e.to_string())?;
+    attach_media_bridge(app, &wv, id);
     Ok(())
+}
+
+/// Attach the receiving end of the media bridge (v0.10.0) to
+/// one service webview.
+///
+/// The bridge channel is WebView2's own host messaging: the
+/// page calls `window.chrome.webview.postMessage(json)` and the
+/// host hears it as the CoreWebView2 `WebMessageReceived`
+/// event. The controller comes from Tauri's `with_webview`
+/// (`PlatformWebview::controller()`); the handler registration
+/// mirrors the one wry itself uses for Tauri's IPC, and the two
+/// coexist — WebView2 events are multi-subscriber, and our
+/// parser ignores everything that is not a bridge report
+/// (Tauri's IPC strings included). The alternatives were
+/// weighed and rejected (BLUEPRINT seksi 16): a Tauri remote
+/// capability would hand arbitrary user-chosen origins an
+/// invoke surface, and a localhost bridge adds a listening
+/// server plus token distribution for no gain.
+///
+/// Security: a page message is untrusted input. It can only
+/// ever be DATA for handle_bridge_message — no message shape
+/// reaches a command, a shell, or an eval.
+#[cfg(target_os = "windows")]
+fn attach_media_bridge(app: &tauri::AppHandle, wv: &tauri::Webview, id: &str) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2;
+    use webview2_com::{take_pwstr, WebMessageReceivedEventHandler};
+    use windows::core::PWSTR;
+
+    let app = app.clone();
+    let id = id.to_string();
+    let _ = wv.with_webview(move |platform| {
+        let controller = platform.controller();
+        let core: ICoreWebView2 = match unsafe { controller.CoreWebView2() } {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let handler = WebMessageReceivedEventHandler::create(Box::new(move |_sender, args| {
+            let Some(args) = args else {
+                return Ok(());
+            };
+            let mut raw = PWSTR::null();
+            if unsafe { args.TryGetWebMessageAsString(&mut raw) }.is_err() {
+                // Not a string message (an object post): not a
+                // bridge report — our script always posts a
+                // JSON string.
+                return Ok(());
+            }
+            let text = take_pwstr(raw);
+            handle_bridge_message(&app, &id, &text);
+            Ok(())
+        }));
+        let mut token = Default::default();
+        let _ = unsafe { core.add_WebMessageReceived(&handler, &mut token) };
+    });
+}
+
+/// Sodium ships for Windows only; anywhere else the bridge is
+/// simply absent and media features stay dark.
+#[cfg(not(target_os = "windows"))]
+fn attach_media_bridge(_app: &tauri::AppHandle, _wv: &tauri::Webview, _id: &str) {}
+
+/// One bounded string field out of a bridge message: anything
+/// that is not a string is empty, anything longer is cut.
+fn bridge_str(v: &serde_json::Value, key: &str, max: usize) -> String {
+    match v.get(key).and_then(|x| x.as_str()) {
+        Some(s) => s.chars().take(max).collect(),
+        None => String::new(),
+    }
+}
+
+/// Handle one raw bridge message from one service's page. The
+/// page is untrusted: the payload is size-capped before
+/// parsing, the version and type must match the two known
+/// report shapes, every field is type-checked and clamped,
+/// and the status is an enum, never free text. Anything else
+/// is dropped silently.
+fn handle_bridge_message(app: &tauri::AppHandle, id: &str, text: &str) {
+    if text.len() > 8192 {
+        return;
+    }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else {
+        return;
+    };
+    if v.get("v").and_then(|x| x.as_u64()) != Some(1) {
+        return;
+    }
+    let state = app.state::<AppState>();
+    match v.get("t").and_then(|x| x.as_str()) {
+        Some("media") => {
+            let status = match v.get("status").and_then(|x| x.as_str()) {
+                Some("playing") => "playing",
+                Some("paused") => "paused",
+                _ => "none",
+            };
+            let info = MediaInfo {
+                title: bridge_str(&v, "title", 300),
+                artist: bridge_str(&v, "artist", 200),
+                status: status.to_string(),
+                pip: v
+                    .get("pip")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false),
+            };
+            let changed = {
+                let mut map = state.media_state.lock().unwrap();
+                let changed = map.get(id) != Some(&info);
+                if changed {
+                    map.insert(id.to_string(), info.clone());
+                }
+                changed
+            };
+            if changed {
+                let _ = app.emit_to(UI_LABEL, "media-changed", media_entry(id, &info));
+            }
+            // A service that stopped playing keeps its eviction
+            // protection for a grace period; schedule the
+            // recheck that eventually lets it lapse.
+            if status != "playing" && !info.pip {
+                schedule_media_evict_check(app);
+            }
+        }
+        Some("notif") => {
+            // Recorded in memory only (the panel is v0.11.0),
+            // capped so a notification-happy page cannot grow
+            // this without bound.
+            let note = PageNotification {
+                service_id: id.to_string(),
+                title: bridge_str(&v, "title", 300),
+                body: bridge_str(&v, "body", 1000),
+                at_ms: unix_ms(),
+            };
+            let mut list = state.page_notifications.lock().unwrap();
+            list.push(note);
+            if list.len() > 200 {
+                let excess = list.len() - 200;
+                list.drain(..excess);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Labels whose service is currently playing media or holding
+/// a picture-in-picture window (v0.10.0): exempt from eviction
+/// exactly like pinned services and the split panes, because
+/// destroying the webview would kill the playback (and the PiP
+/// window with it) under the user.
+fn media_protected_labels(state: &AppState) -> HashSet<String> {
+    state
+        .media_state
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, m)| m.status == "playing" || m.pip)
+        .map(|(id, _)| label_for(id))
+        .collect()
+}
+
+/// Debounced eviction recheck for media protection (v0.10.0):
+/// when a service pauses or ends, its protection lapses only
+/// after a ~60 s grace period, so a short pause (answering a
+/// chat, a buffering stall) never costs the user their player.
+/// Same generation-counter pattern as the split gate: every
+/// new non-playing report reschedules, and only the newest
+/// scheduled check re-runs eviction.
+fn schedule_media_evict_check(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let gen = state
+        .media_evict_gen
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        + 1;
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+        let state = handle.state::<AppState>();
+        if state.media_evict_gen.load(std::sync::atomic::Ordering::SeqCst) == gen {
+            evict_over_limit(&handle, &state);
+        }
+    });
+}
+
+/// Forget a service's media state (its webview is gone, so any
+/// now-playing row would be a ghost) and tell the UI, mirroring
+/// how eviction clears the unread badge.
+fn clear_media_state(app: &tauri::AppHandle, state: &AppState, id: &str) {
+    let removed = state.media_state.lock().unwrap().remove(id);
+    if let Some(old) = removed {
+        if old.status != "none" || old.pip {
+            let none = MediaInfo {
+                title: String::new(),
+                artist: String::new(),
+                status: "none".to_string(),
+                pip: false,
+            };
+            let _ = app.emit_to(UI_LABEL, "media-changed", media_entry(id, &none));
+        }
+    }
+}
+
+/// Snapshot of every service's media state, for the media
+/// panel when it opens (changes after that arrive as
+/// "media-changed" events).
+#[tauri::command]
+fn media_states(state: State<'_, AppState>) -> Vec<MediaStateEntry> {
+    state
+        .media_state
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(id, info)| media_entry(id, info))
+        .collect()
+}
+
+/// Drive one service's media (v0.10.0) by evaluating the bridge
+/// script's fixed control handle in its page. The action is a
+/// whitelist matched to constant script strings — the seek
+/// amount and the YouTube selectors are ours, and nothing the
+/// page (or any other caller) supplies is ever interpolated
+/// into the evaluated script.
+#[tauri::command]
+fn media_control(app: tauri::AppHandle, id: String, action: String) -> Result<(), String> {
+    if !valid_id(&id) {
+        return Err("invalid service id".into());
+    }
+    let script = match action.as_str() {
+        "toggle" => "window.__sodiumMedia&&window.__sodiumMedia.toggle()",
+        "seek-back" => "window.__sodiumMedia&&window.__sodiumMedia.seekBy(-10)",
+        "seek-fwd" => "window.__sodiumMedia&&window.__sodiumMedia.seekBy(10)",
+        "next" => "window.__sodiumMedia&&window.__sodiumMedia.next()",
+        "prev" => "window.__sodiumMedia&&window.__sodiumMedia.prev()",
+        _ => return Err("unknown media action".into()),
+    };
+    let wv = app
+        .get_webview(&label_for(&id))
+        .ok_or("service webview is not alive")?;
+    wv.eval(script).map_err(|e| e.to_string())
 }
 
 /// Create a pinned service's webview at startup, parked off-screen
@@ -878,7 +1198,11 @@ fn evict_down_to(app: &tauri::AppHandle, state: &AppState, target: usize) {
             // While split view is on, its two panes are exempt
             // exactly like pinned services: they neither count
             // towards the limit nor can be chosen as victims.
-            let protected = split_protected_labels(state);
+            let mut protected = split_protected_labels(state);
+            // Services playing media (or holding a PiP window)
+            // are exempt the same way (v0.10.0): evicting one
+            // would stop the playback under the user.
+            protected.extend(media_protected_labels(state));
             let non_pinned: Vec<&String> = mru
                 .iter()
                 .filter(|l| !pinned.contains(id_from_label(l)) && !protected.contains(*l))
@@ -902,6 +1226,9 @@ fn evict_down_to(app: &tauri::AppHandle, state: &AppState, target: usize) {
                     "unread-changed",
                     (id_from_label(&v).to_string(), 0usize),
                 );
+                // Same for its media state: no ghost rows in the
+                // media panel (v0.10.0).
+                clear_media_state(app, state, id_from_label(&v));
                 state.alive_mru.lock().unwrap().retain(|l| l != &v);
             }
             None => break,
@@ -1075,6 +1402,7 @@ fn close_service(app: tauri::AppHandle, state: State<'_, AppState>, id: String) 
         let _ = wv.close();
     }
     let _ = app.emit_to(UI_LABEL, "unread-changed", (id.clone(), 0usize));
+    clear_media_state(&app, &state, &id);
     state.alive_mru.lock().unwrap().retain(|l| l != &label);
     let mut active = state.active.lock().unwrap();
     if active.as_deref() == Some(label.as_str()) {
@@ -1121,6 +1449,7 @@ fn close_webview(app: tauri::AppHandle, state: State<'_, AppState>, id: String) 
         let _ = wv.close();
     }
     let _ = app.emit_to(UI_LABEL, "unread-changed", (id.clone(), 0usize));
+    clear_media_state(&app, &state, &id);
     state.alive_mru.lock().unwrap().retain(|l| l != &label);
     let mut active = state.active.lock().unwrap();
     if active.as_deref() == Some(label.as_str()) {
@@ -1618,6 +1947,8 @@ pub fn run() {
             set_service_zoom,
             set_service_notif,
             set_service_media,
+            media_states,
+            media_control,
             split_enter,
             split_exit,
             split_set_companion,
