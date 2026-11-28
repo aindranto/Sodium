@@ -479,9 +479,8 @@ function refreshNotifBtn() {
 const pickerPanel = el("pickerPanel");
 const ctxPanel = el("ctxPanel");
 const editPanel = el("editPanel");
-const adblockPanel = el("adblockPanel");
 const confirmPanel = el("confirmPanel");
-const managePanel = el("managePanel");
+const settingsPanel = el("settingsPanel");
 const dlPanel = el("dlPanel");
 const inboxPanel = el("inboxPanel");
 // The inbox drawer's ⋯ menu is NOT in allPanels on purpose:
@@ -500,7 +499,7 @@ const groupNamePanel = el("groupNamePanel");
 // hidden by hand (see openGroupMenu), so the panel machinery
 // never tears Kelola down underneath it.
 const groupMenu = el("groupMenu");
-const allPanels = [pickerPanel, ctxPanel, editPanel, adblockPanel, confirmPanel, managePanel, dlPanel, inboxPanel, updatePanel, quickPanel, groupPanel, notifMenu, permPanel, groupNamePanel];
+const allPanels = [pickerPanel, ctxPanel, editPanel, confirmPanel, settingsPanel, dlPanel, inboxPanel, updatePanel, quickPanel, groupPanel, notifMenu, permPanel, groupNamePanel];
 let ctxService = null;
 
 let lastFocus = null;
@@ -592,8 +591,12 @@ document.addEventListener("click", (e) => {
   if (!groupMenu.hidden) {
     if (path.includes(groupMenu)) return;
     hideGroupMenu();
-    if (path.includes(managePanel)) return;
+    if (path.includes(settingsPanel)) return;
   }
+  // A Kelola drag in flight owns the pointer (captured by the
+  // grip, inside the panel): no outside-click dismissal may
+  // fire until the drop lands (review point, v0.12.0).
+  if (mgDrag) return;
   const open = allPanels.find(p => !p.hidden);
   if (!open) return;
   // Use composedPath: a handler may detach e.target mid-click.
@@ -654,8 +657,17 @@ function imgFilter(s) {
   return s && s.hue ? "hue-rotate(" + s.hue + "deg)" : "";
 }
 
+// A colour that is not a plain hex value must never reach an
+// innerHTML string: iconVisual splices the colour into an SVG
+// fill attribute, so a crafted value (e.g. from an imported
+// config) could break out of the attribute and inject markup
+// (review finding, v0.12.0). Anything else falls back.
+function safeColor(c, fallback) {
+  return /^#[0-9a-fA-F]{3,8}$/.test(c || "") ? c : fallback;
+}
+
 function iconVisual(s, px) {
-  const col = s.iconColor || "#ffffff";
+  const col = safeColor(s.iconColor, "#ffffff");
   const sp = document.createElement("span");
   if (s.glyph && GLYPHS[s.glyph]) {
     sp.className = "svgIcon";
@@ -1031,7 +1043,7 @@ el("ctxManage").addEventListener("click", async () => {
   await openManage();
 });
 el("ctxAdblock").addEventListener("click", async () => {
-  await openAdblockPanel(null);
+  await openSettings("adblock");
 });
 
 el("addBtn").addEventListener("click", openPicker);
@@ -1494,7 +1506,7 @@ el("hueReset").addEventListener("click", () => {
   paintEditIcon();
 });
 el("editAdblockBtn").addEventListener("click", async () => {
-  if (editId) await openAdblockPanel(editId);
+  if (editId) await openSettings("adblock", { returnEditId: editId });
 });
 el("editDuplicate").addEventListener("click", async () => {
   const s = services.find(x => x.id === editId);
@@ -1660,12 +1672,136 @@ function confirmDiscardEdit(after) {
 // dialog (see openEditDialog above).
 const manageList = el("manageList");
 
-async function openManage() {
-  renderManage();
-  await openPanel(managePanel);
+// ------------------------------------------------------------------
+// Settings panel (v0.12.0): one two-column panel that absorbed
+// the standalone Kelola panel, the YouTube adblock panel, the
+// top-bar "Hidup bareng" picker and Kelola's header/footer
+// settings, per the unified-settings plan (research 28–29 Nov).
+// Sections: Layanan (the old Kelola list, moved whole — the
+// drag logic below is untouched), Umum, Tampilan, Adblock,
+// Data & Tentang. Everything still saves instantly through
+// the same stores/commands as before; only the homes moved.
+//
+// Doors: the sidebar gear (this section's last-used section),
+// the sidebar Kelola button (straight to Layanan — managing
+// services is the frequent task, so it stays one click), the
+// YouTube adblock doors in the context menu / edit dialog
+// (straight to Adblock), Ctrl+, and a Quick Switcher action
+// row. The panel is a normal member of allPanels, so the
+// shared machinery gives it the scrim, the exit beat, focus
+// restore, and the rule that every service-switch path closes
+// it before switching (switchTo closes all panels first).
+let settingsSectionName = "umum";
+// Set when the panel was opened from the edit dialog's
+// adblock door: the X button then hands the user back to that
+// dialog, mirroring the old adblock panel's Tutup button. Any
+// other way out (Esc, outside click, another door) just
+// closes, as the old panel did.
+let settingsReturnEditId = null;
+
+async function openSettings(section, opts) {
+  if (section) settingsSectionName = section;
+  settingsReturnEditId = (opts && opts.returnEditId) || null;
+  paintSettings();
+  await openPanel(settingsPanel);
+  const tab = settingsPanel.querySelector('.setNavItem[data-section="' + settingsSectionName + '"]');
+  if (tab) tab.focus();
 }
+
+// Kelola's many return paths (edit dialog Batal/Simpan,
+// confirm dialogs, the group prompt) all land here: the
+// settings panel at the Layanan section.
+async function openManage() {
+  await openSettings("layanan");
+}
+
+function paintSettings() {
+  renderManage();
+  paintAdblockPanel();
+  // Default zoom: snap the stored value to the nearest step
+  // so the select always shows a real choice.
+  let dz = getDefaultZoom();
+  if (!ZOOM_STEPS.includes(dz)) {
+    dz = ZOOM_STEPS.reduce((a, b) => Math.abs(b - dz) < Math.abs(a - dz) ? b : a, 1);
+  }
+  el("defaultZoomSel").value = String(dz);
+  el("settingsVersion").textContent = appVer ? "Sodium v" + appVer : "Sodium";
+  paintSettingsSection();
+}
+
+function paintSettingsSection() {
+  for (const b of settingsPanel.querySelectorAll(".setNavItem")) {
+    const on = b.dataset.section === settingsSectionName;
+    b.classList.toggle("sel", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+    b.tabIndex = on ? 0 : -1;
+  }
+  for (const sec of settingsPanel.querySelectorAll(".setSection")) {
+    sec.hidden = sec.dataset.section !== settingsSectionName;
+  }
+}
+
+for (const b of settingsPanel.querySelectorAll(".setNavItem")) {
+  b.addEventListener("click", () => {
+    settingsSectionName = b.dataset.section;
+    paintSettingsSection();
+  });
+}
+// Tablist keyboard support: arrows move between sections and
+// activate them (automatic activation), Home/End jump.
+settingsPanel.querySelector(".settingsNav").addEventListener("keydown", (e) => {
+  const tabs = [...settingsPanel.querySelectorAll(".setNavItem")];
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  let j = null;
+  if (e.key === "ArrowDown" || e.key === "ArrowRight") j = (i + 1) % tabs.length;
+  else if (e.key === "ArrowUp" || e.key === "ArrowLeft") j = (i - 1 + tabs.length) % tabs.length;
+  else if (e.key === "Home") j = 0;
+  else if (e.key === "End") j = tabs.length - 1;
+  if (j === null) return;
+  e.preventDefault();
+  settingsSectionName = tabs[j].dataset.section;
+  paintSettingsSection();
+  tabs[j].focus();
+});
+// Focus trap: while the settings panel is the top layer, Tab
+// cycles inside it. When another panel (edit dialog, confirm)
+// is open instead, the settings panel is hidden and this is
+// inert — the layering rule (only the top layer dismisses /
+// owns focus) falls out of the shared panel machinery.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Tab" || settingsPanel.hidden) return;
+  if (allPanels.some(p => p !== settingsPanel && !p.hidden)) return;
+  const f = [...settingsPanel.querySelectorAll("button, input, select, [tabindex]")]
+    .filter(n => !n.disabled && n.tabIndex >= 0 && n.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+el("settingsBtn").addEventListener("click", () => openSettings());
+el("settingsClose").addEventListener("click", async () => {
+  const back = settingsReturnEditId;
+  settingsReturnEditId = null;
+  if (back) {
+    const s = services.find(x => x.id === back);
+    if (s) { await openEditDialog(s); return; }
+  }
+  await closePanels();
+});
+el("settingsUpdateBtn").addEventListener("click", () => {
+  if (pendingLatest) { openPanel(updatePanel); return; }
+  checkUpdate(true);
+});
+el("defaultZoomSel").addEventListener("change", () => {
+  const v = parseFloat(el("defaultZoomSel").value);
+  if (!ZOOM_STEPS.includes(v)) return;
+  localStorage.setItem("sodium.zoom", String(v)); scheduleConfigSave();
+  showZoom();
+});
+
 el("manageBtn").addEventListener("click", openManage);
-el("manageClose").addEventListener("click", closePanels);
 el("manageAdd").addEventListener("click", openPicker);
 el("showNamesToggle").addEventListener("change", () => {
   showNames = el("showNamesToggle").checked;
@@ -2807,7 +2943,7 @@ async function checkYtAdblock(manual) {
   } catch {
     if (manual) showToast("Gagal memeriksa update adblock — periksa koneksi internet.");
   }
-  if (!adblockPanel.hidden) paintAdblockPanel();
+  if (!settingsPanel.hidden && settingsSectionName === "adblock") paintAdblockPanel();
 }
 function scheduleYtAdblockCheck() {
   const last = ytAdblockInfo().lastCheck || 0;
@@ -2815,12 +2951,9 @@ function scheduleYtAdblockCheck() {
   setTimeout(() => checkYtAdblock(false), 7000);
 }
 
-let adblockReturnEditId = null;
-async function openAdblockPanel(fromEditId) {
-  adblockReturnEditId = fromEditId || null;
-  paintAdblockPanel();
-  await openPanel(adblockPanel);
-}
+// The adblock controls live in the Settings panel's Adblock
+// section since v0.12.0 (the standalone panel is gone); the
+// paint function below just fills its toggle + version meta.
 function paintAdblockPanel() {
   const info = ytAdblockInfo();
   el("adblockToggle").checked = ytAdblockEnabled;
@@ -2833,19 +2966,10 @@ el("adblockToggle").addEventListener("change", async () => {
   try { await invoke("set_adblock_enabled", { enabled: ytAdblockEnabled }); } catch { /* older Rust */ }
 });
 el("adblockCheckBtn").addEventListener("click", () => checkYtAdblock(true));
-el("adblockClose").addEventListener("click", async () => {
-  const back = adblockReturnEditId;
-  adblockReturnEditId = null;
-  if (back) {
-    const s = services.find(x => x.id === back);
-    if (s) { await openEditDialog(s); return; }
-  }
-  await closePanels();
-});
 
 // Read the version from the app so it cannot go stale.
 window.__TAURI__.app.getVersion()
-  .then(v => { appVer = v; el("appVersion").textContent = "Sodium v" + v; })
+  .then(v => { appVer = v; el("appVersion").textContent = "Sodium v" + v; el("settingsVersion").textContent = "Sodium v" + v; })
   .catch(() => {});
 
 // Unread badge counts from Rust (page-title watcher in each service
@@ -2868,6 +2992,10 @@ window.__TAURI__.event.listen("shortcut-switch", (e) => {
   const s = services[Number(e.payload)];
   if (s) switchTo(s);
 });
+
+// Ctrl+, from Rust (global shortcut while the window is
+// focused, v0.12.0): open the Settings panel.
+window.__TAURI__.event.listen("shortcut-settings", () => { openSettings(); });
 
 // "Mulai kelompok": right-clicking a named group separator in the
 // sidebar opens this panel; confirming starts every (enabled)
@@ -2918,6 +3046,38 @@ function renderQuickList(q) {
   const query = (q || "").trim().toLowerCase();
   quickList.innerHTML = "";
   quickRows = [];
+  // Action row (v0.12.0): the Settings panel is a quick-switch
+  // destination too, shown when the query is empty or matches
+  // it. It rides the same row/selection machinery; svc is null
+  // and activateQuick branches on the action instead.
+  if (!query || "pengaturan".includes(query) || "settings".includes(query)) {
+    const row = document.createElement("div");
+    row.className = "qRow";
+    row.setAttribute("role", "option");
+    row.id = "qrow-settings";
+    row.setAttribute("aria-selected", "false");
+    const tile = document.createElement("span");
+    tile.className = "tileIcon qTile";
+    tile.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+    const info = document.createElement("div");
+    info.className = "qInfo";
+    const nm = document.createElement("div");
+    nm.className = "qName";
+    nm.textContent = "Pengaturan";
+    const cap = document.createElement("div");
+    cap.className = "qGroup";
+    cap.textContent = "Buka panel pengaturan (Ctrl+,)";
+    info.append(nm, cap);
+    row.append(tile, info);
+    const entry = { svc: null, action: "settings", row };
+    row.addEventListener("click", () => activateQuick(entry));
+    row.addEventListener("mouseenter", () => {
+      const i = quickRows.indexOf(entry);
+      if (i >= 0) { quickSel = i; paintQuickSel(); }
+    });
+    quickRows.push(entry);
+    quickList.appendChild(row);
+  }
   for (const s of services) {
     if (query && !s.name.toLowerCase().includes(query) && !groupOf(s).toLowerCase().includes(query)) continue;
     const row = document.createElement("div");
@@ -2987,7 +3147,7 @@ function renderQuickList(q) {
     quickList.appendChild(d);
   }
   // Start on the active service when it is in the list.
-  quickSel = Math.max(0, quickRows.findIndex(r => r.svc.id === activeId));
+  quickSel = Math.max(0, quickRows.findIndex(r => r.svc && r.svc.id === activeId));
   paintQuickSel();
 }
 
@@ -3005,6 +3165,11 @@ function paintQuickSel() {
 
 async function activateQuick(entry) {
   if (!entry) return;
+  if (entry.action === "settings") {
+    await closePanels();
+    await openSettings();
+    return;
+  }
   const s = entry.svc;
   await closePanels();
   // Disabled services open their menu instead, like a sidebar click.
@@ -3047,17 +3212,80 @@ async function exportConfig() {
   } catch { showToast("Gagal mengekspor konfigurasi."); }
 }
 
+// Import hardening (v0.12.0, from the external plan review):
+// an imported file replaces EVERYTHING, so it is validated
+// before the confirm dialog — snapshot shape, a numeric rev
+// when present, and per-service: id matching ^[a-z0-9-]+$, a
+// non-empty name, and an http/https URL only. Colour fields
+// are coerced to safe hex values instead of rejected: they
+// feed innerHTML in iconVisual, so a malformed one is a
+// markup-injection hole, not a cosmetic issue (iconVisual
+// also sanitises at render, as defence in depth). The file
+// size is capped here and again in Rust's import_config.
+const IMPORT_MAX_CHARS = 16 * 1024 * 1024;
+function validateImport(snap) {
+  if (!snap || typeof snap !== "object" || Array.isArray(snap)) throw new Error("shape");
+  if (!snap.data || typeof snap.data !== "object" || Array.isArray(snap.data)) throw new Error("data");
+  if (snap.rev !== undefined && typeof snap.rev !== "number") throw new Error("rev");
+  const raw = snap.data["sodium.services"];
+  if (typeof raw !== "string") throw new Error("services");
+  const list = JSON.parse(raw);
+  if (!Array.isArray(list) || !list.length) throw new Error("services list");
+  const hex = /^#[0-9a-fA-F]{3,8}$/;
+  for (const s of list) {
+    if (!s || typeof s !== "object" || Array.isArray(s)) throw new Error("entry");
+    if (typeof s.id !== "string" || !/^[a-z0-9-]+$/.test(s.id)) throw new Error("id");
+    if (typeof s.name !== "string" || !s.name.trim()) throw new Error("name");
+    if (typeof s.url !== "string" || !/^https?:\/\//i.test(s.url)) throw new Error("url");
+    if (s.color !== undefined && !hex.test(String(s.color))) s.color = "#262a33";
+    if (s.iconColor !== undefined && !hex.test(String(s.iconColor))) s.iconColor = "#ffffff";
+  }
+  // The sanitised list is what applyImport will store.
+  snap.data["sodium.services"] = JSON.stringify(list);
+  return list;
+}
+
+// Snapshot of the configuration as it is right now, kept in
+// localStorage (deliberately NOT a CFG_KEYS entry: it must
+// not ride exports or the config.json mirror). Overwritten
+// by every import; the recovery path if an import goes wrong.
+function backupCurrentConfig() {
+  const data = {};
+  for (const k of CFG_KEYS) {
+    const v = localStorage.getItem(k);
+    if (v !== null) data[k] = v;
+  }
+  try {
+    localStorage.setItem("sodium.preImportBackup", JSON.stringify({ rev: cfgRev, data, at: Date.now() }));
+  } catch { /* storage full: the import still proceeds */ }
+}
+
 async function importConfig() {
   let text;
-  try { text = await invoke("import_config"); } catch { return; }
+  try { text = await invoke("import_config"); }
+  catch { showToast("File konfigurasi tidak bisa dibaca (atau terlalu besar)."); return; }
   if (!text) return; // dialog cancelled
+  if (text.length > IMPORT_MAX_CHARS) { showToast("File konfigurasi terlalu besar (maks 16 MB)."); return; }
   let snap;
+  let importedServices;
   try {
     snap = JSON.parse(text);
-    if (!snap || !snap.data || !Array.isArray(JSON.parse(snap.data["sodium.services"] || "null"))) {
-      throw new Error("invalid config file");
-    }
+    importedServices = validateImport(snap);
   } catch { showToast("File konfigurasi tidak valid."); return; }
+
+  // The confirm dialog summarises what the file carries, so
+  // the user confirms contents, not just a filename (v0.12.0).
+  const grpNames = new Set();
+  for (const s of importedServices) {
+    const g = (s.group ? String(s.group) : "").trim().toLowerCase();
+    if (g) grpNames.add(g);
+  }
+  try {
+    for (const g of JSON.parse(snap.data["sodium.groups"] || "[]")) {
+      const n = String(g || "").trim().toLowerCase();
+      if (n) grpNames.add(n);
+    }
+  } catch { /* the services' own groups already counted */ }
 
   // Replacing the whole configuration is destructive enough to
   // ask first (v0.8.6): the file was validated above, and only a
@@ -3065,10 +3293,10 @@ async function importConfig() {
   // to the Kelola panel with the current configuration untouched.
   openConfirm({
     title: "Impor konfigurasi",
-    body: "Impor akan mengganti seluruh konfigurasi Sodium saat ini — daftar layanan, pin, kelompok, zoom, dan pengaturan — dengan isi file ini. Sesi login di tiap layanan tidak berubah. Lanjutkan?",
+    body: "Impor akan mengganti seluruh konfigurasi Sodium saat ini — daftar layanan, pin, kelompok, zoom, dan pengaturan — dengan isi file ini: " + importedServices.length + " layanan dan " + grpNames.size + " kelompok. Sesi login di tiap layanan tidak berubah. Cadangan konfigurasi saat ini disimpan otomatis sebelum impor. Lanjutkan?",
     okLabel: "Impor",
     fromManage: true,
-    onOk: async () => { await applyImport(snap); },
+    onOk: async () => { backupCurrentConfig(); await applyImport(snap); },
   });
 }
 
@@ -3171,6 +3399,13 @@ window.addEventListener("keydown", async (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && /^[1-9]$/.test(e.key)) {
     const s = services[Number(e.key) - 1]; if (s) switchTo(s);
+  }
+  // Ctrl+, opens Settings (v0.12.0) — same fallback role as
+  // Alt+Space above: inside a service webview the Rust global
+  // shortcut ("shortcut-settings") covers it instead.
+  if ((e.ctrlKey || e.metaKey) && e.key === ",") {
+    e.preventDefault();
+    openSettings();
   }
 });
 

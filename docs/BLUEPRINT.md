@@ -889,3 +889,137 @@ geometrinya.
   `notifications_list`/`notifications_clear`, event
   `notif-added`, lencana tombol inbox + cara hitungnya,
   hook jembatan, caveat service worker.
+
+## 22. Catatan v0.12.0 (29 Nov 2026) — Panel Pengaturan Terpadu
+
+Panel Pengaturan satu-satunya sekarang menampung semua
+pengelolaan aplikasi, menggabungkan Panel Kelola atas usulan
+Agung, mengikuti dokumen rencana
+`plan-panel-pengaturan-terpadu-2026-11-29.md` (riset
+perbandingan + riset UI Panel Pengaturan 28 Nov, plus seksi 8
+= penyesuaian dari review eksternal atas rencana itu).
+
+- **Wadah**: panel dua lajur memakai mesin panel yang ada
+  (anggota `allPanels`, kelas `picker`: layanan disembunyikan
+  selama terbuka, scrim, ketukan keluar, fokus dikembalikan
+  oleh `closePanels`). Lebar `min(720px, 100vw − 32px)`.
+  Navigasi seksi kiri (tablist): **Layanan · Umum · Tampilan
+  · Adblock · Data & Tentang**; di bawah 640px viewport
+  navigasi jadi tab horizontal di atas konten (jendela Sodium
+  berukuran minimum 900px, jadi ini jaring pengaman).
+  Kepala "Pengaturan" + X; kaki statis "Semua perubahan
+  tersimpan otomatis" — semua setelan memang langsung
+  tersimpan lewat jalur lama (`CFG_KEYS`, `set_max_alive`,
+  `set_adblock_enabled`, ekspor/impor); tidak ada migrasi
+  data dan tidak ada kunci penyimpanan yang berubah.
+- **Pintu masuk**: ikon gir baru di bawah sidebar (seksi
+  terakhir sesi ini; awalnya Umum), tombol Kelola sidebar
+  jadi pintasan langsung ke seksi Layanan (tooltip keduanya
+  jelas: "Kelola layanan" / "Pengaturan"), pintu adblock di
+  menu konteks & dialog edit jadi pintasan ke seksi Adblock
+  (dari dialog edit, tombol X panel mengembalikan ke dialog
+  edit — meniru tombol Tutup panel adblock lama), tombol
+  update bar atas tetap, **Ctrl+,** (pintasan global Rust
+  saat jendela fokus, pola yang sama dengan Ctrl+1..9 dan
+  Alt+Space; fallback keydown di UI), dan baris aksi
+  "Pengaturan" di Quick Switcher.
+- **Seksi Layanan** = Panel Kelola dipindah utuh: daftar
+  seret per kelompok, petunjuk kelompok kosong, "+ Kelompok
+  baru", menu konteks header, tambah layanan — logika seret
+  pointer TIDAK ditulis ulang, hanya DOM-nya pindah rumah.
+  `openManage()` sekarang membuka panel ini di seksi
+  Layanan, jadi semua jalur pulang lama (Batal/Simpan dialog
+  edit, dialog konfirmasi, prompt kelompok) bekerja tanpa
+  perubahan. Dialog edit layanan tetap dialog terpisah di
+  atasnya, isi tidak berubah.
+- **Seksi Umum**: Hidup bareng (pindah dari bar atas —
+  pemilih bar atas dihapus; teks bantu jujur: menurunkan
+  batas langsung menutup layanan yang berlebih) + Zoom
+  bawaan eksplisit (select langkah zoom yang menulis
+  `sodium.zoom`; semantik: nilai awal untuk layanan tanpa
+  zoom sendiri — yang sudah punya zoom per-layanan tidak
+  berubah; kontrol zoom bar atas tetap) + kotak "Segera
+  hadir" (Mode Senyap, Kunci Aplikasi PIN) sebagai baris
+  teks redup TANPA saklar mati.
+- **Seksi Tampilan**: Tampilkan nama + Ukuran ikon, pindah
+  dari kepala Kelola (elemen & handler yang sama).
+- **Seksi Adblock**: saklar global Adblock YouTube + versi
+  skrip + terakhir dicek + tombol Periksa update (semua
+  pindah dari panel adblock lama, yang dihapus). Teks bantu
+  mempertahankan kalimat jujur lama: perubahan berlaku
+  untuk layanan YouTube yang dibuka setelah ini; yang
+  sedang hidup tidak terpengaruh (skrip & saklar memang
+  hanya diterapkan Rust saat webview dibuat).
+- **Seksi Data & Tentang**: versi aplikasi, Cek pembaruan
+  (alur update yang ada), Ekspor/Impor JSON (pindah dari
+  kaki Kelola) + teks bahwa login tidak ikut ter-ekspor +
+  baris disclaimer merek dagang sederhana.
+
+### Nasib poin seksi 8 (review eksternal, basis kode v0.4.4) setelah diperiksa ke kode v0.11.1
+
+1. **Pindah layanan saat panel terbuka — SUDAH BERES.**
+   Semua jalur (klik sidebar, Ctrl+1..9 dari UI maupun
+   pintasan global Rust, Quick Switcher, klik notifikasi,
+   mulai kelompok, tukar split) bermuara ke `switchTo()`
+   yang menutup semua panel lebih dulu, atau memanggil
+   `closePanels()` secara eksplisit. Panel Pengaturan
+   mewarisi aturan ini sebagai anggota `allPanels`.
+2. **Keterangan evict Hidup bareng — DITAMBAHKAN** sebagai
+   teks bantu di seksi Umum (perilaku evict-nya sendiri
+   tidak berubah, tanpa dialog konfirmasi).
+3. **Hapus elemen lama di langkah yang sama — DILAKUKAN.**
+   Pemilih bar atas, panel adblock, kepala/kaki Kelola dan
+   panel Kelola dihapus bersama rumah barunya dalam satu
+   perubahan; grep id lama (`managePanel`, `adblockPanel`,
+   `manageClose`, `adblockClose`, `topAlive`,
+   `openAdblockPanel`) nol di seluruh kode, dan cek silang
+   id JS↔HTML bersih.
+4. **Validasi impor — DIPERBAIKI.** `validateImport()`:
+   bentuk snapshot, `rev` numerik bila ada, per layanan id
+   `^[a-z0-9-]+$`, nama non-kosong, URL hanya http/https;
+   dialog konfirmasi kini menyebut jumlah layanan +
+   kelompok; cadangan konfigurasi saat ini disimpan ke
+   localStorage `sodium.preImportBackup` sebelum menimpa
+   (sengaja bukan CFG_KEYS agar tidak ikut ter-ekspor);
+   batas ukuran 16 MB di JS dan di `import_config` Rust.
+   Temuan `iconColor` → `innerHTML` **masih ada dan
+   DIPERBAIKI di dua lapis**: impor memaksa warna non-hex
+   ke nilai aman, dan `iconVisual` kini membersihkan warna
+   lewat `safeColor()` sebelum masuk string SVG.
+5. **Lapisan dialog — SUDAH BERES by design.** Mesin panel
+   hanya menampilkan satu panel pada satu waktu, jadi
+   dialog edit/konfirmasi memang selalu lapisan teratas;
+   Esc dan klik-luar hanya menyentuh yang terlihat itu.
+   Ditambah penjaga eksplisit: klik-luar tidak menutup
+   panel selama seret Kelola berlangsung (`mgDrag`).
+6. **Zoom bawaan — DIPUTUSKAN & DITULIS** di label/teks
+   bantu seksi Umum (lihat di atas).
+7. **Saklar adblock — SUDAH TERTULIS JUJUR** sejak panel
+   lama (berlaku saat layanan dibuka berikutnya); teks
+   yang sama dipertahankan di seksi Adblock.
+8. **Jendela sempit — DITAMBAHKAN** (tab horizontal di
+   bawah 640px viewport; lihat catatan jaring pengaman).
+9. **Aksesibilitas — DITAMBAHKAN untuk panel ini**:
+   `role="dialog"` + `aria-modal` + `aria-labelledby`,
+   navigasi seksi sebagai tablist (panah/Home/End, aktivasi
+   otomatis), jebakan fokus Tab selama panel jadi lapisan
+   teratas, fokus kembali ke pemicu lewat `lastFocus` mesin
+   panel yang ada.
+10. **Ctrl+, + aksi Quick Switcher — DITAMBAHKAN** (lihat
+    pintu masuk di atas).
+11. **Tooltip dua pintu — SUDAH JELAS**: "Kelola layanan"
+    dan "Pengaturan".
+12. **Kotak segera hadir tanpa saklar — DILAKUKAN** (baris
+    teks redup + pil "Segera hadir").
+13. **Daftar uji manual** (untuk Agung sebelum/sesudah
+    rilis): tiap kontrol bertahan setelah mulai ulang;
+    buka panel lalu Ctrl+N / Ctrl+1..9 / Alt+Space; impor
+    berkas rusak & berkas valid; jendela kecil dan 4K;
+    pintasan adblock dari layanan YouTube (menu konteks,
+    dialog edit, dan kembali lewat X); seret urutan layanan
+    di seksi Layanan; Ctrl+, dari layanan maupun dari UI.
+
+Ditahan sesuai rencana: nama seksi "Privasi & Adblock"
+(menunggu isi privasi beneran) dan info penyimpanan/reset
+di Data & Tentang (reset destruktif, perlu rancangan
+sendiri).

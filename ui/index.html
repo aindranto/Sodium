@@ -12,6 +12,7 @@
     <nav id="services"></nav>
     <button id="addBtn" title="Tambah layanan" aria-label="Tambah layanan">+</button>
     <button id="manageBtn" title="Kelola layanan" aria-label="Kelola layanan"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M19 7h1M4 12h3M13 12h7M4 17h11M19 17h1"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="12" r="2.2"/><circle cx="17.5" cy="17" r="2.2"/></svg></button>
+    <button id="settingsBtn" title="Pengaturan" aria-label="Pengaturan"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   </aside>
   <header id="topbar">
     <div class="topLeft">
@@ -27,16 +28,6 @@
         <button id="zoomLabel" title="Reset zoom ke 100%" aria-label="Reset zoom ke 100%">100%</button>
         <button id="zoomIn" title="Zoom in" aria-label="Perbesar zoom">+</button>
       </div>
-      <label class="topAlive" title="Berapa layanan non-pin yang boleh hidup bersamaan. 1 = paling ringan. ∞ = semua hidup (kayak Ferdium, RAM naik per layanan).">
-        Hidup bareng
-        <select id="maxAlive" aria-label="Jumlah layanan yang boleh hidup bersamaan">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="5">5</option>
-          <option value="0">∞</option>
-        </select>
-      </label>
       <span id="dlPill" role="status" aria-live="polite" hidden></span>
       <button id="inboxBtn" class="toolBtn" title="Notifikasi semua layanan" aria-label="Buka panel notifikasi semua layanan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span id="inboxBadge" class="inboxBadge" hidden></span></button>
       <button id="dlBtn" class="toolBtn" title="Riwayat unduhan" aria-label="Riwayat unduhan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m6.5 10.5 5.5 5.5 5.5-5.5"/><path d="M4.5 20h15"/></svg></button>
@@ -141,26 +132,132 @@
     <button class="popItem" role="menuitemradio" aria-checked="false" data-notif-mode="deny"><span class="popDot"></span>Tolak</button>
   </div>
 
-  <div id="managePanel" class="picker" hidden>
+  <div id="settingsPanel" class="picker" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="pickerHead">
-      <h2>Kelola layanan</h2>
-      <button id="manageAdd" class="btnPrimary">Tambah layanan</button>
+      <h2 id="settingsTitle">Pengaturan</h2>
+      <button id="settingsClose" class="toolBtn" title="Tutup pengaturan" aria-label="Tutup pengaturan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <div class="mgSettings">
-      <label class="mgSetItem"><span>Tampilkan nama di ikon sidebar</span><input type="checkbox" id="showNamesToggle"/></label>
-      <label class="mgSetItem"><span>Ukuran ikon</span>
-        <select id="iconSizeSel" aria-label="Ukuran ikon sidebar">
-          <option value="40">Kecil</option>
-          <option value="48">Sedang</option>
-          <option value="56">Besar</option>
-        </select>
-      </label>
+    <div class="settingsBody">
+      <div class="settingsNav" role="tablist" aria-label="Seksi pengaturan" aria-orientation="vertical">
+        <button type="button" class="setNavItem" role="tab" id="setTab-layanan" data-section="layanan" aria-controls="secLayanan" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Layanan</button>
+        <button type="button" class="setNavItem" role="tab" id="setTab-umum" data-section="umum" aria-controls="secUmum" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Umum</button>
+        <button type="button" class="setNavItem" role="tab" id="setTab-tampilan" data-section="tampilan" aria-controls="secTampilan" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>Tampilan</button>
+        <button type="button" class="setNavItem" role="tab" id="setTab-adblock" data-section="adblock" aria-controls="secAdblock" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Adblock</button>
+        <button type="button" class="setNavItem" role="tab" id="setTab-data" data-section="data" aria-controls="secData" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Data &amp; Tentang</button>
+      </div>
+      <div class="settingsContent">
+        <section id="secLayanan" class="setSection" data-section="layanan" role="tabpanel" aria-labelledby="setTab-layanan" hidden>
+          <div class="setSecHead">
+            <h3>Layanan</h3>
+            <button id="manageAdd" class="btnPrimary">Tambah layanan</button>
+          </div>
+          <div id="manageList" class="manageList"></div>
+        </section>
+        <section id="secUmum" class="setSection" data-section="umum" role="tabpanel" aria-labelledby="setTab-umum" hidden>
+          <h3>Umum</h3>
+          <div class="setScroll">
+            <div class="setGroup">
+              <div class="setLabel">Hidup bareng</div>
+              <p class="setHelp">Berapa layanan non-pin yang boleh hidup bersamaan. 1 = paling ringan. ∞ = semua hidup (kayak Ferdium, RAM naik per layanan).</p>
+              <label class="setRow">
+                <select id="maxAlive" aria-label="Jumlah layanan yang boleh hidup bersamaan">
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="5">5</option>
+                  <option value="0">∞</option>
+                </select>
+              </label>
+              <p class="setHelp">Menurunkan batas akan langsung menutup layanan yang melebihi batas — termasuk yang sedang memutar audio atau punya draf pesan yang belum terkirim.</p>
+            </div>
+            <div class="setGroup">
+              <div class="setLabel">Zoom bawaan</div>
+              <p class="setHelp">Tingkat zoom awal untuk layanan yang belum punya zoom sendiri. Layanan yang zoom-nya sudah diatur lewat kontrol zoom di bar atas tidak berubah.</p>
+              <label class="setRow">
+                <select id="defaultZoomSel" aria-label="Zoom bawaan untuk layanan baru">
+                  <option value="0.5">50%</option>
+                  <option value="0.6">60%</option>
+                  <option value="0.7">70%</option>
+                  <option value="0.8">80%</option>
+                  <option value="0.9">90%</option>
+                  <option value="1">100%</option>
+                  <option value="1.1">110%</option>
+                  <option value="1.25">125%</option>
+                  <option value="1.5">150%</option>
+                  <option value="1.75">175%</option>
+                  <option value="2">200%</option>
+                </select>
+              </label>
+            </div>
+            <div class="comingSoon">
+              <div class="setLabel">Segera hadir</div>
+              <div class="soonRow">
+                <span class="soonName">Mode Senyap <span class="mgPill">Segera hadir</span></span>
+                <span class="soonDesc">Membisukan semua suara dan notifikasi untuk sementara.</span>
+              </div>
+              <div class="soonRow">
+                <span class="soonName">Kunci Aplikasi PIN <span class="mgPill">Segera hadir</span></span>
+                <span class="soonDesc">Mengunci aplikasi dengan PIN.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section id="secTampilan" class="setSection" data-section="tampilan" role="tabpanel" aria-labelledby="setTab-tampilan" hidden>
+          <h3>Tampilan</h3>
+          <div class="setScroll">
+            <div class="mgSettings">
+              <label class="mgSetItem"><span>Tampilkan nama di ikon sidebar</span><input type="checkbox" id="showNamesToggle"/></label>
+              <label class="mgSetItem"><span>Ukuran ikon</span>
+                <select id="iconSizeSel" aria-label="Ukuran ikon sidebar">
+                  <option value="40">Kecil</option>
+                  <option value="48">Sedang</option>
+                  <option value="56">Besar</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </section>
+        <section id="secAdblock" class="setSection" data-section="adblock" role="tabpanel" aria-labelledby="setTab-adblock" hidden>
+          <h3>Adblock</h3>
+          <div class="setScroll">
+            <label class="mgSetItem adblockToggleRow"><input type="checkbox" id="adblockToggle"/><span>Adblock aktif untuk layanan YouTube</span></label>
+            <div class="adblockMeta">
+              <div><span>Versi skrip</span><strong id="adblockVersion">-</strong></div>
+              <div><span>Terakhir dicek</span><strong id="adblockChecked">-</strong></div>
+            </div>
+            <p class="muted">Skrip menyembunyikan slot iklan dan melewati iklan video (skip / fast-forward). Tidak 100%: sebagian iklan YouTube datang dari domain yang sama dengan videonya, dan YouTube aktif mendeteksi adblock — matikan saklar di atas bila YouTube mulai rewel. Perubahan berlaku untuk layanan YouTube yang dibuka setelah ini; yang sedang hidup tidak terpengaruh.</p>
+            <div class="setBtnRow">
+              <button id="adblockCheckBtn" class="btnGhost">Periksa update</button>
+            </div>
+          </div>
+        </section>
+        <section id="secData" class="setSection" data-section="data" role="tabpanel" aria-labelledby="setTab-data" hidden>
+          <h3>Data &amp; Tentang</h3>
+          <div class="setScroll">
+            <div class="dataRow"><span>Versi</span><strong id="settingsVersion">Sodium</strong></div>
+            <div class="setGroup">
+              <div class="setLabel">Pembaruan</div>
+              <p class="setHelp">Periksa apakah ada versi Sodium yang lebih baru. Tombol "Cek update" di bar atas melakukan hal yang sama.</p>
+              <div class="setBtnRow">
+                <button id="settingsUpdateBtn" class="btnGhost">Cek pembaruan</button>
+              </div>
+            </div>
+            <div class="setGroup">
+              <div class="setLabel">Konfigurasi</div>
+              <p class="setHelp">Ekspor menyimpan daftar layanan, kelompok, pin, zoom, dan pengaturan ke satu file JSON. Sesi login di tiap layanan tidak ikut — login tersimpan di folder profil masing-masing layanan di perangkat ini.</p>
+              <div class="setBtnRow">
+                <button id="exportBtn" class="btnGhost">Ekspor</button>
+                <button id="importBtn" class="btnGhost">Impor</button>
+              </div>
+            </div>
+            <p class="setHelp">Sodium adalah aplikasi independen. WhatsApp, YouTube, dan nama serta logo layanan lain adalah merek dagang pemiliknya masing-masing dan tidak berafiliasi dengan Sodium.</p>
+          </div>
+        </section>
+      </div>
     </div>
-    <div id="manageList" class="manageList"></div>
-    <div class="pickerFoot">
-      <button id="exportBtn" class="btnGhost">Ekspor</button>
-      <button id="importBtn" class="btnGhost">Impor</button>
-      <button id="manageClose" class="btnGhost">Tutup</button>
+    <div class="settingsFoot">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+      <span>Semua perubahan tersimpan otomatis</span>
     </div>
   </div>
 
@@ -286,24 +383,6 @@
       <button id="editDuplicate" class="btnGhost footLeft">Duplikat</button>
       <button id="editCancel" class="btnGhost">Batal</button>
       <button id="editSave" class="btnPrimary">Simpan</button>
-    </div>
-  </div>
-
-  <div id="adblockPanel" class="picker" hidden>
-    <div class="pickerHead">
-      <h2>Adblock YouTube</h2>
-    </div>
-    <div class="editScroll">
-      <label class="mgSetItem adblockToggleRow"><input type="checkbox" id="adblockToggle"/><span>Adblock aktif untuk layanan YouTube</span></label>
-      <div class="adblockMeta">
-        <div><span>Versi skrip</span><strong id="adblockVersion">-</strong></div>
-        <div><span>Terakhir dicek</span><strong id="adblockChecked">-</strong></div>
-      </div>
-      <p class="muted">Skrip menyembunyikan slot iklan dan melewati iklan video (skip / fast-forward). Tidak 100%: sebagian iklan YouTube datang dari domain yang sama dengan videonya, dan YouTube aktif mendeteksi adblock — matikan saklar di atas bila YouTube mulai rewel. Perubahan berlaku untuk layanan YouTube yang dibuka setelah ini; yang sedang hidup tidak terpengaruh.</p>
-    </div>
-    <div class="pickerFoot">
-      <button id="adblockCheckBtn" class="btnGhost footLeft">Periksa update</button>
-      <button id="adblockClose" class="btnPrimary">Tutup</button>
     </div>
   </div>
 

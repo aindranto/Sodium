@@ -566,8 +566,9 @@ fn make_download_handler(
     }
 }
 
-/// Global shortcuts owned by Sodium: Ctrl+1..9 (switch service) and
-/// Alt+Space (quick switcher). They are registered only while the
+/// Global shortcuts owned by Sodium: Ctrl+1..9 (switch service),
+/// Alt+Space (quick switcher) and Ctrl+, (settings panel, v0.12.0).
+/// They are registered only while the
 /// Sodium window is focused (and released on blur, so other apps keep
 /// their keys): keydown events inside a service webview never reach
 /// Sodium's own UI, so without this the shortcuts would be dead
@@ -589,6 +590,7 @@ fn focus_shortcuts() -> Vec<tauri_plugin_global_shortcut::Shortcut> {
     .map(|c| Shortcut::new(Some(Modifiers::CONTROL), *c))
     .collect();
     list.push(Shortcut::new(Some(Modifiers::ALT), Code::Space));
+    list.push(Shortcut::new(Some(Modifiers::CONTROL), Code::Comma));
     list
 }
 
@@ -1931,7 +1933,10 @@ fn export_config(data: String) -> Result<bool, String> {
 }
 
 /// Import a settings snapshot from a JSON file the user picks.
-/// Returns None when the dialog was cancelled.
+/// Returns None when the dialog was cancelled. Files over
+/// 16 MB are refused up front (v0.12.0): a real snapshot is
+/// orders of magnitude smaller, and the UI validates the
+/// contents before anything is applied.
 #[tauri::command]
 fn import_config() -> Result<Option<String>, String> {
     let Some(path) = rfd::FileDialog::new()
@@ -1940,6 +1945,10 @@ fn import_config() -> Result<Option<String>, String> {
     else {
         return Ok(None);
     };
+    let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    if size > 16 * 1024 * 1024 {
+        return Err("Berkas terlalu besar (maks 16 MB).".to_string());
+    }
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     Ok(Some(text))
 }
@@ -1965,6 +1974,8 @@ pub fn run() {
                     if event.state() == ShortcutState::Pressed {
                         if shortcut.key == Code::Space && shortcut.mods == Modifiers::ALT {
                             let _ = app.emit_to(UI_LABEL, "quick-switch", ());
+                        } else if shortcut.key == Code::Comma && shortcut.mods == Modifiers::CONTROL {
+                            let _ = app.emit_to(UI_LABEL, "shortcut-settings", ());
                         } else if let Some(idx) = shortcut_index(shortcut.key) {
                             let _ = app.emit_to(UI_LABEL, "shortcut-switch", idx);
                         }
@@ -2086,7 +2097,7 @@ pub fn run() {
             {
                 use tauri_plugin_global_shortcut::GlobalShortcutExt;
                 match event {
-                    // Ctrl+1..9 and Alt+Space belong to Sodium only
+                    // Ctrl+1..9, Alt+Space and Ctrl+, belong to Sodium only
                     // while its window is focused; release them when
                     // it blurs.
                     WindowEvent::Focused(true) => {

@@ -26,8 +26,8 @@ body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--
 .svc.disabled{filter:grayscale(1);opacity:.4}
 .svc.disabled:hover{background:var(--raised)}
 #addBtn{width:44px;height:44px;border-radius:14px;border:1px dashed #3a3d46;background:transparent;color:var(--muted);font-size:22px;cursor:pointer}
-#manageBtn{width:44px;height:44px;border-radius:14px;border:1px solid var(--border-strong);background:var(--raised);color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center}
-#manageBtn:hover{background:var(--hover);color:var(--text)}
+#manageBtn,#settingsBtn{width:44px;height:44px;border-radius:14px;border:1px solid var(--border-strong);background:var(--raised);color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center}
+#manageBtn:hover,#settingsBtn:hover{background:var(--hover);color:var(--text)}
 .svc{display:flex;flex-direction:column;align-items:center;justify-content:center}
 .svcName{font-size:9px;line-height:1.15;color:var(--muted);max-width:64px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .svc.active .svcName{color:var(--text)}
@@ -84,7 +84,6 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .zoomCtl button{background:var(--raised);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;min-width:30px;height:28px;font-weight:600;cursor:pointer}
 .zoomCtl button:hover{background:var(--hover)}
 #zoomLabel{min-width:54px;font-size:12px;font-variant-numeric:tabular-nums}
-.topAlive{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
 #linkBar{position:fixed;left:76px;right:0;top:44px;height:40px;background:var(--panel);border-bottom:1px solid var(--border-strong);display:flex;align-items:center;gap:12px;padding:0 12px;z-index:9}
 #linkBar[hidden]{display:none}
 #linkUrlText{flex:1;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -224,7 +223,7 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .pickerFoot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .pickerFoot button{padding:8px 14px;border-radius:8px;border:0;font-weight:600;cursor:pointer}
 
-#maxAlive{background:var(--raised);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;padding:4px 6px;font-size:12px}
+#maxAlive,#defaultZoomSel{background:var(--raised);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;padding:4px 6px;font-size:12px}
 .imgRow{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
 .imgRow button{padding:8px 12px;border-radius:8px;border:0;font-weight:600;cursor:pointer;font-size:12px}
 .iconPreview{width:40px;height:40px;border-radius:10px;object-fit:cover;border:1px solid var(--border-strong)}
@@ -254,8 +253,8 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .swatch.sel{outline:2px solid var(--accent);outline-offset:2px}
 .colorRow{margin-top:12px;font-size:13px;color:var(--muted)}
 
-.svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgAct,.mgFormBtns button,.zoomCtl button,.linkBtns button,.compBtn,#addBtn,#manageBtn,.swatch,.glyphBtn,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
-.svc:active,.tile:active,.toolBtn:active,.compBtn:active,#addBtn:active,#manageBtn:active,.zoomCtl button:active,.linkBtns button:active,.panel button:active,.pickerFoot button:active,.mgAct:active,.mgFormBtns button:active,.customRow button:active{transform:scale(.98)}
+.svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgAct,.mgFormBtns button,.zoomCtl button,.linkBtns button,.compBtn,#addBtn,#manageBtn,#settingsBtn,.swatch,.glyphBtn,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
+.svc:active,.tile:active,.toolBtn:active,.compBtn:active,#addBtn:active,#manageBtn:active,#settingsBtn:active,.zoomCtl button:active,.linkBtns button:active,.panel button:active,.pickerFoot button:active,.mgAct:active,.mgFormBtns button:active,.customRow button:active{transform:scale(.98)}
 /* Exit states (v0.8.6): closePanels() adds .closing for one short
    beat before [hidden] lands, so dismissal is faster than entry
    (110ms vs 160-180ms) instead of an instant vanish. These rules
@@ -274,7 +273,6 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 
 #editPanel{width:min(560px,calc(100vw - 108px))}
-#adblockPanel{width:min(460px,calc(100vw - 108px))}
 #confirmPanel{width:min(400px,calc(100vw - 108px))}
 #editPreview{width:44px;height:44px;border-radius:11px;font-size:22px;flex:none}
 .editScroll{overflow-y:auto;overscroll-behavior:contain;min-height:0;flex:1;padding-right:4px;margin-top:12px}
@@ -378,3 +376,50 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .compBtns{display:flex;gap:4px;flex:none}
 .compBtn{background:transparent;border:1px solid transparent;border-radius:7px;color:var(--muted);font:inherit;font-size:12px;font-weight:600;padding:4px 9px;cursor:pointer}
 .compBtn:hover{background:var(--raised);color:var(--text)}
+
+/* Settings panel (v0.12.0): one two-column panel that absorbed
+   the Kelola panel, the YouTube adblock panel, the top-bar
+   "Hidup bareng" picker and Kelola's header/footer settings.
+   Section nav on the left (a tablist), section content on the
+   right; only the content scrolls (the Layanan list keeps its
+   own internal scroll, like Kelola before it). On narrow
+   viewports the nav becomes a horizontal tab row on top. The
+   window's minimum size (900px) currently keeps that fallback
+   as a safety net rather than a daily path. */
+#settingsPanel{width:min(720px,calc(100vw - 32px));max-height:min(720px,calc(100vh - 64px))}
+.settingsBody{display:flex;flex:1;min-height:0;margin-top:14px;border-top:1px solid var(--border)}
+.settingsNav{display:flex;flex-direction:column;gap:4px;width:184px;flex:none;padding:12px 10px 12px 0;border-right:1px solid var(--border);overflow-y:auto;overscroll-behavior:contain}
+.setNavItem{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left;white-space:nowrap}
+.setNavItem:hover{background:var(--hover);color:var(--text)}
+.setNavItem.sel{background:var(--accent-dim);color:var(--accent)}
+.setNavItem svg{flex:none}
+.settingsContent{flex:1;min-width:0;min-height:0;display:flex}
+.setSection{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;padding:14px 2px 0 16px}
+.setSection[hidden]{display:none}
+.setSection h3{margin:0 0 10px;font-size:15px;font-weight:600}
+.setSecHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.setSecHead h3{margin:0}
+.setSecHead button{padding:8px 14px;border-radius:8px;border:0;font-weight:600;cursor:pointer}
+.setScroll{overflow-y:auto;overscroll-behavior:contain;flex:1;min-height:0;padding-right:4px}
+.setGroup{margin-bottom:20px}
+.setLabel{font-size:13px;font-weight:600;margin-bottom:4px}
+.setHelp{font-size:12px;color:var(--muted);line-height:1.55;margin:4px 0 8px}
+.setRow{display:flex;align-items:center;gap:10px}
+.setBtnRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.setBtnRow button{padding:8px 14px;border-radius:8px;border:0;font-weight:600;cursor:pointer}
+.setBtnRow #importBtn{margin-right:0}
+.setSection .mgSettings{border-bottom:0;margin-bottom:0;padding-top:2px}
+.setSection .manageList{margin-bottom:2px}
+.comingSoon{border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+.soonRow{display:flex;flex-direction:column;gap:2px;padding:9px 0 2px;border-top:1px solid var(--border);margin-top:9px}
+.soonName{font-size:13px;font-weight:600;color:var(--text-2);display:flex;align-items:center;gap:8px}
+.soonDesc{font-size:12px;color:var(--muted);line-height:1.5}
+.dataRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:2px 0 10px;border-bottom:1px solid var(--border);font-size:13px;margin-bottom:16px}
+.dataRow span{color:var(--muted)}
+.settingsFoot{margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;flex:none}
+.settingsFoot svg{color:var(--accent);flex:none}
+@media (max-width:640px){
+  .settingsBody{flex-direction:column}
+  .settingsNav{flex-direction:row;width:auto;border-right:0;border-bottom:1px solid var(--border);padding:8px 0;overflow-x:auto;overflow-y:hidden}
+  .setSection{padding:12px 0 0}
+}
