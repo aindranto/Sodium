@@ -385,8 +385,14 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
    own internal scroll, like Kelola before it). On narrow
    viewports the nav becomes a horizontal tab row on top. The
    window's minimum size (900px) currently keeps that fallback
-   as a safety net rather than a daily path. */
-#settingsPanel{width:min(720px,calc(100vw - 32px));max-height:min(720px,calc(100vh - 64px))}
+   as a safety net rather than a daily path.
+   v0.12.1: the panel's height is FIXED (Agung's feedback: the
+   panel grew/shrank with each section's content, so the panel
+   and its X button jumped around when switching sections).
+   One height for every section; short sections simply leave
+   empty space at the bottom, tall ones scroll inside. */
+#settingsPanel{width:min(720px,calc(100vw - 32px));height:min(680px,calc(100vh - 56px));max-height:none}
+#settingsPanel .pickerHead{flex:none}
 .settingsBody{display:flex;flex:1;min-height:0;margin-top:14px;border-top:1px solid var(--border)}
 .settingsNav{display:flex;flex-direction:column;gap:4px;width:184px;flex:none;padding:12px 10px 12px 0;border-right:1px solid var(--border);overflow-y:auto;overscroll-behavior:contain}
 .setNavItem{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left;white-space:nowrap}

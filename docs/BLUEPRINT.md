@@ -1023,3 +1023,39 @@ Ditahan sesuai rencana: nama seksi "Privasi & Adblock"
 (menunggu isi privasi beneran) dan info penyimpanan/reset
 di Data & Tentang (reset destruktif, perlu rancangan
 sendiri).
+
+## 23. Catatan v0.12.1 (29 Nov 2026) — Ukuran Panel Pengaturan tetap
+
+Umpan balik Agung setelah mengetes v0.12.0 (dengan
+screenshot tiap seksi): panel Pengaturan berubah-ubah
+ukuran mengikuti isi seksi — seksi Layanan menjulang
+tinggi, seksi Tampilan (2 kontrol) jadi pendek — sehingga
+posisi panel dan tombol X ikut meloncat tiap ganti seksi.
+
+Perbaikan (murni CSS, `ui/style.css`; tidak ada JS yang
+diubah, tidak ada perubahan fungsi):
+
+- `#settingsPanel` kini bertinggi TETAP:
+  `height:min(680px,calc(100vh - 56px))`, dengan
+  `max-height:none` agar batas `max-height` bawaan
+  `.picker` tidak ikut membatasi. Lebar tidak berubah
+  (`min(720px,calc(100vw - 32px))`). Panel terpusat di
+  area di bawah bar atas, jadi pada jendela terkecil
+  tinggi itu menyisakan ±6px di atas dan di bawah panel —
+  tidak pernah meluber viewport (gerbang fit tetap
+  berlaku).
+- Struktur flex yang sudah ada kini bekerja pada tinggi
+  yang pasti: kepala panel `flex:none` (ditulis eksplisit
+  untuk panel ini), badan `flex:1;min-height:0`, kaki
+  ("Semua perubahan tersimpan otomatis") `flex:none` di
+  dasar panel. Lajur konten kanan scroll di dalam area
+  isi; daftar Layanan tetap scroll internal lewat
+  `.manageList`; tombol X tidak lagi berpindah posisi
+  antar seksi.
+- Seksi pendek (Tampilan, Data & Tentang) menyisakan
+  ruang kosong di bawah konten — memang disengaja demi
+  ukuran yang stabil, tidak diisi apa pun.
+- Mode tab jendela sempit (<640px) mengikuti aturan yang
+  sama: tinggi tetap, isi scroll.
+- Panel lain (picker, laci notifikasi, dialog) tidak
+  disentuh — ukuran mengikuti isi memang normal di sana.
