@@ -788,3 +788,46 @@ Catatan versi: ini patch (0.10.3) walau isinya pencabutan
 tiga rilis patch dan belum pernah jadi andalan; tidak ada
 kemampuan baru, dan fondasi jembatan/notifikasi yang
 menjadi isi minor 0.10.0 tetap berdiri.
+
+## 20. Catatan v0.11.0 (28 Nov 2026) — Panel notifikasi terpusat (Jalur B tahap 2)
+
+Tahap 2 Jalur B: semua notifikasi halaman yang tertangkap
+hook skrip jembatan kini tampil dalam satu panel, agar
+tidak ada yang kelewat di antara banyak layanan.
+
+- **Store persisten**: `page_notifications` (maks 200,
+  tertua dibuang) dicerminkan ke `notifications.json` di
+  app_data_dir — tulis atomik temp + rename mengikuti pola
+  `save_config`, debounce ±400 ms per generasi (pola
+  gate_gen), dan dimuat lagi saat startup. Berkas
+  hilang/rusak → panel mulai kosong, tanpa panik.
+  `notifications_clear` menulis seketika (tidak menunggu
+  debounce) agar restart tidak menghidupkan lagi daftar
+  yang baru dibersihkan.
+- **Command & event baru**: `notifications_list`
+  (terbaru-dulu), `notifications_clear`, dan event
+  `notif-added` untuk setiap notifikasi baru — lencana
+  dan panel yang sedang terbuka hidup tanpa polling.
+- **UI**: tombol inbox baru di bar atas (ikon tray,
+  sengaja berbeda dari lonceng kebijakan notif layanan
+  aktif) dengan lencana jumlah belum-dibaca. "Belum
+  dibaca" = entri yang masuk sejak panel terakhir dibuka;
+  penandanya `sodium.notifSeenAt`, ikut cermin config.
+  Panel mengikuti pola panel yang ada (max-height +
+  scroll internal): ikon + nama layanan, judul, isi
+  terpotong rapi 2 baris, waktu relatif ("5 mnt lalu",
+  tanggal + jam bila sudah lewat sehari). Tombol
+  "Bersihkan" di kepala panel lewat konfirmasi yang sama
+  dengan aksi destruktif lain (batal mengembalikan ke
+  panel).
+- **Klik item = pindah layanan**: memakai `switchTo`
+  yang sama dengan klik sidebar, termasuk semantik split
+  (mengklik layanan pendamping menukar kedua panel);
+  panel tertutup lewat jalur yang sama.
+- **Cakupan, jujur**: panel hanya memuat notifikasi yang
+  tertangkap hook halaman (`Notification` +
+  `ServiceWorkerRegistration.showNotification`).
+  Notifikasi yang lahir murni di dalam service worker
+  tanpa panggilan dari halaman bisa tidak tercatat.
+  Toast Windows dari WebView2 tidak berubah sama sekali:
+  panel ini catatan tambahan, bukan pengganti.

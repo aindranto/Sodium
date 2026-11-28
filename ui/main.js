@@ -71,7 +71,7 @@ const store = {
 // side: localStorage is the working copy, but it dies with the
 // webview profile data; config.json survives that. Saves are
 // debounced and revisioned; at startup a newer config.json wins.
-const CFG_KEYS = ["sodium.services", "sodium.pinned", "sodium.disabled", "sodium.groups", "sodium.showNames", "sodium.lastActive", "sodium.onboarded", "sodium.zoom", "sodium.zoomByService", "sodium.maxAlive", "sodium.downloads", "sodium.lastUpdateCheck", "sodium.iconSize", "sodium.ytAdblock", "sodium.ytAdblockInfo", "sodium.ytAdblockScript", "sodium.splitRatio", "sodium.splitCompanion"];
+const CFG_KEYS = ["sodium.services", "sodium.pinned", "sodium.disabled", "sodium.groups", "sodium.showNames", "sodium.lastActive", "sodium.onboarded", "sodium.zoom", "sodium.zoomByService", "sodium.maxAlive", "sodium.downloads", "sodium.lastUpdateCheck", "sodium.iconSize", "sodium.ytAdblock", "sodium.ytAdblockInfo", "sodium.ytAdblockScript", "sodium.splitRatio", "sodium.splitCompanion", "sodium.notifSeenAt"];
 let cfgRev = parseInt(localStorage.getItem("sodium.cfgRev") || "0", 10) || 0;
 let cfgTimer = null;
 let applyingConfig = false;
@@ -483,6 +483,7 @@ const adblockPanel = el("adblockPanel");
 const confirmPanel = el("confirmPanel");
 const managePanel = el("managePanel");
 const dlPanel = el("dlPanel");
+const inboxPanel = el("inboxPanel");
 const updatePanel = el("updatePanel");
 const quickPanel = el("quickPanel");
 const groupPanel = el("groupPanel");
@@ -494,7 +495,7 @@ const groupNamePanel = el("groupNamePanel");
 // hidden by hand (see openGroupMenu), so the panel machinery
 // never tears Kelola down underneath it.
 const groupMenu = el("groupMenu");
-const allPanels = [pickerPanel, ctxPanel, editPanel, adblockPanel, confirmPanel, managePanel, dlPanel, updatePanel, quickPanel, groupPanel, notifMenu, permPanel, groupNamePanel];
+const allPanels = [pickerPanel, ctxPanel, editPanel, adblockPanel, confirmPanel, managePanel, dlPanel, inboxPanel, updatePanel, quickPanel, groupPanel, notifMenu, permPanel, groupNamePanel];
 let ctxService = null;
 
 let lastFocus = null;
@@ -2185,6 +2186,164 @@ function renderDownloads() {
 
 el("dlBtn").addEventListener("click", () => { renderDownloads(); openPanel(dlPanel); });
 el("dlClose").addEventListener("click", closePanels);
+
+// Notification panel (v0.11.0, Jalur B tahap 2): every page
+// notification the bridge script records, across all services,
+// in one list. Rust persists the store (notifications.json);
+// this side mirrors it for rendering. "Unread" = entries that
+// arrived since the panel was last opened; the watermark
+// lives in localStorage and rides the config mirror like
+// every other durable setting. The panel only ever shows
+// what the page-side hooks caught — a notification born
+// purely inside a service worker can slip past it (the
+// Windows toasts are unaffected either way).
+let inboxItems = [];
+let inboxSeenAt = parseInt(localStorage.getItem("sodium.notifSeenAt") || "0", 10) || 0;
+
+function inboxUnreadCount() {
+  return inboxItems.reduce((n, x) => n + (x.at_ms > inboxSeenAt ? 1 : 0), 0);
+}
+function renderInboxBadge(popped) {
+  const bd = el("inboxBadge");
+  const n = inboxUnreadCount();
+  if (!n) { bd.hidden = true; return; }
+  bd.hidden = false;
+  bd.textContent = n > 99 ? "99+" : String(n);
+  if (popped) popBadge(bd);
+}
+function saveInboxSeenAt() {
+  localStorage.setItem("sodium.notifSeenAt", String(inboxSeenAt));
+  scheduleConfigSave();
+}
+
+// "5 mnt lalu" while it is fresh; a plain date + time once it
+// is a day old, when a relative label stops meaning anything.
+function relTimeNotif(ms) {
+  const diff = Date.now() - ms;
+  if (diff < 60 * 1000) return "baru saja";
+  if (diff < 60 * 60 * 1000) return Math.floor(diff / 60000) + " mnt lalu";
+  if (diff < 24 * 60 * 60 * 1000) return Math.floor(diff / 3600000) + " jam lalu";
+  return new Date(ms).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function renderInbox() {
+  const list = el("inboxList");
+  list.innerHTML = "";
+  if (!inboxItems.length) {
+    const d = document.createElement("div");
+    d.className = "dlEmpty";
+    d.textContent = "Belum ada notifikasi tercatat";
+    list.appendChild(d);
+    return;
+  }
+  for (const n of inboxItems) {
+    const s = services.find(x => x.id === n.service_id);
+    const row = document.createElement("div");
+    row.className = "inboxRow";
+    const ic = document.createElement("span");
+    ic.className = "inboxIcon";
+    if (s && s.img) {
+      const im = document.createElement("img");
+      im.src = s.img; im.alt = "";
+      const f = imgFilter(s); if (f) im.style.filter = f;
+      im.onerror = () => { im.replaceWith(iconVisual(s, 20)); if (s.color) ic.style.background = s.color; };
+      ic.appendChild(im);
+    } else if (s) {
+      ic.appendChild(iconVisual(s, 20));
+      if (s.color) ic.style.background = s.color;
+    } else {
+      // The owning service was deleted after the notification
+      // arrived: the entry stays readable, just without a
+      // live icon or a click target.
+      const t = document.createElement("span");
+      t.className = "txtIcon";
+      t.textContent = n.service_id.slice(0, 2);
+      ic.appendChild(t);
+    }
+    const main = document.createElement("div");
+    main.className = "inboxMain";
+    const head = document.createElement("div");
+    head.className = "inboxHead";
+    const svc = document.createElement("span");
+    svc.className = "inboxSvc";
+    svc.textContent = s ? s.name : n.service_id;
+    const time = document.createElement("span");
+    time.className = "inboxTime";
+    time.textContent = relTimeNotif(n.at_ms);
+    head.append(svc, time);
+    const title = document.createElement("div");
+    title.className = "inboxTitle";
+    title.textContent = n.title || "(tanpa judul)";
+    main.append(head, title);
+    if (n.body) {
+      const body = document.createElement("div");
+      body.className = "inboxBody";
+      body.textContent = n.body;
+      main.appendChild(body);
+    }
+    row.append(ic, main);
+    if (s && !disabled.has(s.id)) {
+      row.classList.add("clickable");
+      row.title = "Buka " + s.name;
+      // The same path as a sidebar click: switchTo carries
+      // the split-swap semantics and closes the panels.
+      row.addEventListener("click", () => switchTo(s));
+    }
+    list.appendChild(row);
+  }
+}
+
+async function openInbox() {
+  renderInbox();
+  await openPanel(inboxPanel);
+  // Opening the panel reads everything in it: the watermark
+  // moves to the newest entry and the badge clears.
+  if (inboxItems.length) inboxSeenAt = Math.max(inboxSeenAt, inboxItems[0].at_ms);
+  saveInboxSeenAt();
+  renderInboxBadge(false);
+}
+
+el("inboxBtn").addEventListener("click", () => {
+  if (!inboxPanel.hidden) { closePanels(); return; }
+  openInbox();
+});
+el("inboxClose").addEventListener("click", closePanels);
+el("inboxClear").addEventListener("click", () => {
+  if (!inboxItems.length) return;
+  openConfirm({
+    title: "Bersihkan semua notifikasi?",
+    body: "Seluruh riwayat di panel notifikasi dihapus. Notifikasi Windows dari layanannya sendiri tidak terpengaruh.",
+    okLabel: "Bersihkan",
+    returnTo: inboxPanel,
+    onOk: async () => {
+      await invoke("notifications_clear").catch(() => {});
+      inboxItems = [];
+      renderInboxBadge(false);
+      await openInbox();
+    },
+  });
+});
+
+// New entries arrive live from Rust: the badge ticks up, and
+// an open panel re-renders (its entries are read by
+// definition, so the watermark follows along).
+window.__TAURI__.event.listen("notif-added", (e) => {
+  const n = e.payload;
+  if (!n || typeof n.at_ms !== "number") return;
+  inboxItems.unshift(n);
+  if (inboxItems.length > 200) inboxItems.length = 200;
+  if (!inboxPanel.hidden) {
+    inboxSeenAt = Math.max(inboxSeenAt, n.at_ms);
+    saveInboxSeenAt();
+    renderInbox();
+  }
+  renderInboxBadge(true);
+});
+
+invoke("notifications_list").then((list) => {
+  inboxItems = Array.isArray(list) ? list : [];
+  renderInboxBadge(false);
+}).catch(() => {});
 el("reloadBtn").addEventListener("click", () => { invoke("reload_service").catch(() => {}); });
 
 // Bell button (v0.8.5): toggles the notification menu for the

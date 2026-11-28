@@ -38,6 +38,7 @@
         </select>
       </label>
       <span id="dlPill" role="status" aria-live="polite" hidden></span>
+      <button id="inboxBtn" class="toolBtn" title="Notifikasi semua layanan" aria-label="Buka panel notifikasi semua layanan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span id="inboxBadge" class="inboxBadge" hidden></span></button>
       <button id="dlBtn" class="toolBtn" title="Riwayat unduhan" aria-label="Riwayat unduhan"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m6.5 10.5 5.5 5.5 5.5-5.5"/><path d="M4.5 20h15"/></svg></button>
       <button id="updateBtn" class="toolBtn wide" title="Periksa update Sodium">Cek update<span id="updateDot" class="updateDot" hidden></span></button>
       <span id="appVersion" class="appVersion"></span>
@@ -170,6 +171,17 @@
     <div id="dlList" class="manageList"></div>
     <div class="pickerFoot">
       <button id="dlClose" class="btnGhost">Tutup</button>
+    </div>
+  </div>
+
+  <div id="inboxPanel" class="picker" hidden>
+    <div class="pickerHead">
+      <h2>Notifikasi</h2>
+      <button id="inboxClear" class="btnGhost">Bersihkan</button>
+    </div>
+    <div id="inboxList" class="manageList"></div>
+    <div class="pickerFoot">
+      <button id="inboxClose" class="btnGhost">Tutup</button>
     </div>
   </div>
 

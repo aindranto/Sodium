@@ -70,10 +70,17 @@ struct AppState {
     /// create_service_webview).
     media_policy: Mutex<HashMap<String, String>>,
     /// Page notifications recorded by the bridge script
-    /// (v0.10.0): in-memory groundwork for the v0.11.0 panel —
-    /// no UI reads this yet and nothing persists it. Capped in
-    /// handle_bridge_message.
+    /// (v0.10.0), surfaced by the v0.11.0 notification panel.
+    /// Mirrored to notifications.json in the app data dir
+    /// (debounced, see schedule_persist_notifications) and
+    /// loaded back at startup, so the panel survives restarts.
+    /// Capped at 200 in handle_bridge_message.
     page_notifications: Mutex<Vec<PageNotification>>,
+    /// Generation counter for debouncing notification-store
+    /// writes: a burst of incoming notifications schedules
+    /// several writes, only the newest one touches the disk.
+    /// Same pattern as the split gate's gate_gen.
+    notif_save_gen: std::sync::atomic::AtomicU64,
     /// Bridge liveness per service id (v0.10.1): how many RAW
     /// WebMessageReceived callbacks the service's webview has
     /// produced, and when the last one arrived. The counter is
@@ -193,11 +200,11 @@ struct BridgeContact {
     last_ms: u64,
 }
 
-/// One page notification the bridge script recorded (v0.10.0).
-/// In-memory only — no UI, no persistence; the panel is
-/// v0.11.0. `at_ms` is Sodium's own receive time: the page's
-/// clock is not trusted.
-#[derive(Clone, serde::Serialize)]
+/// One page notification the bridge script recorded (v0.10.0),
+/// listed by the v0.11.0 notification panel and persisted to
+/// notifications.json. `at_ms` is Sodium's own receive time:
+/// the page's clock is not trusted.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct PageNotification {
     service_id: String,
     title: String,
@@ -886,21 +893,27 @@ fn handle_bridge_message(app: &tauri::AppHandle, id: &str, text: &str) {
     let state = app.state::<AppState>();
     match v.get("t").and_then(|x| x.as_str()) {
         Some("notif") => {
-            // Recorded in memory only (the panel is v0.11.0),
+            // Recorded for the notification panel (v0.11.0),
             // capped so a notification-happy page cannot grow
-            // this without bound.
+            // this without bound. The panel learns about the
+            // new entry at once (badge + an open list); the
+            // store file follows on a debounce.
             let note = PageNotification {
                 service_id: id.to_string(),
                 title: bridge_str(&v, "title", 300),
                 body: bridge_str(&v, "body", 1000),
                 at_ms: unix_ms(),
             };
-            let mut list = state.page_notifications.lock().unwrap();
-            list.push(note);
-            if list.len() > 200 {
-                let excess = list.len() - 200;
-                list.drain(..excess);
+            {
+                let mut list = state.page_notifications.lock().unwrap();
+                list.push(note.clone());
+                if list.len() > 200 {
+                    let excess = list.len() - 200;
+                    list.drain(..excess);
+                }
             }
+            let _ = app.emit_to(UI_LABEL, "notif-added", note);
+            schedule_persist_notifications(app);
         }
         Some("hello") => {
             // Liveness hello (v0.10.1): the bridge script is
@@ -912,6 +925,100 @@ fn handle_bridge_message(app: &tauri::AppHandle, id: &str, text: &str) {
         }
         _ => {}
     }
+}
+
+/// Path of the durable notification store (v0.11.0): its own
+/// file next to config.json, so the panel's history survives
+/// restarts (and a config reset does not take it along).
+fn notifications_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("notifications.json"))
+}
+
+/// Load the persisted notification store at startup. A missing
+/// or damaged file is not an error: the panel simply starts
+/// empty. The in-memory cap is re-applied, keeping the newest.
+fn load_notifications(app: &tauri::AppHandle) -> Vec<PageNotification> {
+    let Some(path) = notifications_path(app) else {
+        return Vec::new();
+    };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(mut list) = serde_json::from_str::<Vec<PageNotification>>(&text) else {
+        return Vec::new();
+    };
+    if list.len() > 200 {
+        let excess = list.len() - 200;
+        list.drain(..excess);
+    }
+    list
+}
+
+/// Write the notification store atomically (temp file +
+/// rename), the same pattern as save_config.
+fn persist_notifications(app: &tauri::AppHandle) {
+    let Some(path) = notifications_path(app) else {
+        return;
+    };
+    let Some(dir) = path.parent() else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let text = {
+        let list = state.page_notifications.lock().unwrap();
+        serde_json::to_string(&*list).unwrap_or_else(|_| "[]".to_string())
+    };
+    let _ = std::fs::create_dir_all(dir);
+    let tmp = dir.join("notifications.json.tmp");
+    if std::fs::write(&tmp, text).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+}
+
+/// Debounced persist (v0.11.0): notifications can arrive in
+/// bursts (a chatty group chat), so each new entry only bumps
+/// the generation; the newest scheduled writer, ~400 ms
+/// later, snapshots whatever the store holds by then. Same
+/// generation-counter pattern as schedule_gate_check.
+fn schedule_persist_notifications(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let gen = state
+        .notif_save_gen
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        + 1;
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let state = handle.state::<AppState>();
+        if state.notif_save_gen.load(std::sync::atomic::Ordering::SeqCst) == gen {
+            persist_notifications(&handle);
+        }
+    });
+}
+
+/// The notification panel's snapshot (v0.11.0): newest first,
+/// the order the panel renders.
+#[tauri::command]
+fn notifications_list(state: State<'_, AppState>) -> Vec<PageNotification> {
+    let list = state.page_notifications.lock().unwrap();
+    list.iter().rev().cloned().collect()
+}
+
+/// Empty the notification store (v0.11.0) and its file. The
+/// write goes out immediately, not on the debounce, so a
+/// restart right after clearing cannot resurrect the list;
+/// bumping the generation first retires any debounced writer
+/// still in flight.
+#[tauri::command]
+fn notifications_clear(app: tauri::AppHandle, state: State<'_, AppState>) {
+    state.page_notifications.lock().unwrap().clear();
+    state
+        .notif_save_gen
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    persist_notifications(&app);
 }
 
 /// Forget a service's per-webview bridge state (its webview
@@ -1845,6 +1952,13 @@ pub fn run() {
             // The split gate's initial value, so the very first
             // layout decisions and the UI's first query agree.
             *state.gate_ok.lock().unwrap() = compute_split_gate(&window);
+            // The notification panel's history (v0.11.0):
+            // reload the persisted store so it survives the
+            // restart. A missing or damaged file starts empty.
+            let saved_notifs = load_notifications(app.handle());
+            if !saved_notifs.is_empty() {
+                *state.page_notifications.lock().unwrap() = saved_notifs;
+            }
             // The UI webview gets the download handler too (source
             // "sodium-update") so update installers download inside
             // Sodium instead of opening the system browser.
@@ -1904,7 +2018,9 @@ pub fn run() {
             export_config,
             import_config,
             set_adblock_script,
-            set_adblock_enabled
+            set_adblock_enabled,
+            notifications_list,
+            notifications_clear
         ])
         .on_window_event(|window, event| {
             if window.label() != "main" {
