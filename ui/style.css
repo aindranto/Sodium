@@ -338,20 +338,3 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .compBtns{display:flex;gap:4px;flex:none}
 .compBtn{background:transparent;border:1px solid transparent;border-radius:7px;color:var(--muted);font:inherit;font-size:12px;font-weight:600;padding:4px 9px;cursor:pointer}
 .compBtn:hover{background:var(--raised);color:var(--text)}
-
-/* Media panel (v0.10.0, Jalur B tahap 1): the top-bar button
-   carries a small accent dot while anything is playing (or in
-   PiP) anywhere; the panel reuses the downloads list's rows
-   and the shared .picker frame, so its height is capped and
-   the list scrolls internally like every other panel. Rows
-   carry the fixed bridge controls: seek -10/+10 and play /
-   pause for every service, prev / next only on YouTube rows. */
-#mediaBtn{position:relative}
-.mediaDot{position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:var(--accent);pointer-events:none}
-.mediaDot[hidden]{display:none}
-/* Bridge diagnosis lines in the empty media panel (v0.10.1):
-   one compact muted line per service — connected or not. */
-.mediaDiag{font-size:11px;color:var(--muted);padding:2px 0}
-#mediaPanel{width:min(480px,calc(100vw - 108px))}
-.mediaCtl{display:flex;gap:4px;flex:none;align-items:center}
-.mediaCtlBtn{display:flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 7px;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}

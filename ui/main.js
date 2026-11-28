@@ -483,7 +483,6 @@ const adblockPanel = el("adblockPanel");
 const confirmPanel = el("confirmPanel");
 const managePanel = el("managePanel");
 const dlPanel = el("dlPanel");
-const mediaPanel = el("mediaPanel");
 const updatePanel = el("updatePanel");
 const quickPanel = el("quickPanel");
 const groupPanel = el("groupPanel");
@@ -495,7 +494,7 @@ const groupNamePanel = el("groupNamePanel");
 // hidden by hand (see openGroupMenu), so the panel machinery
 // never tears Kelola down underneath it.
 const groupMenu = el("groupMenu");
-const allPanels = [pickerPanel, ctxPanel, editPanel, adblockPanel, confirmPanel, managePanel, dlPanel, mediaPanel, updatePanel, quickPanel, groupPanel, notifMenu, permPanel, groupNamePanel];
+const allPanels = [pickerPanel, ctxPanel, editPanel, adblockPanel, confirmPanel, managePanel, dlPanel, updatePanel, quickPanel, groupPanel, notifMenu, permPanel, groupNamePanel];
 let ctxService = null;
 
 let lastFocus = null;
@@ -2187,124 +2186,6 @@ function renderDownloads() {
 el("dlBtn").addEventListener("click", () => { renderDownloads(); openPanel(dlPanel); });
 el("dlClose").addEventListener("click", closePanels);
 el("reloadBtn").addEventListener("click", () => { invoke("reload_service").catch(() => {}); });
-
-// ------------------------------------------------------------------
-// Media panel (v0.10.0, Jalur B tahap 1). Rust holds the truth:
-// each service page's bridge script reports its media state
-// over WebView2 WebMessage, Rust keeps it per service and
-// forwards changes as "media-changed"; media_states gives the
-// snapshot when this UI (re)starts. Controls go back through
-// the media_control command, which evals the bridge's fixed
-// control handle in the page — the action names are a
-// whitelist, nothing free-form is ever sent. A service whose
-// media ends (or whose webview dies) reports "none" and its
-// row disappears, mirroring how unread badges clear. Since
-// v0.10.1 every entry also carries bridge liveness (raw
-// contact, counted in Rust before parsing): with no rows,
-// the panel shows a per-service diagnosis instead of only
-// the empty text, so a dead bridge is visible, not silent.
-const mediaStates = new Map();
-// Bridge liveness per service (v0.10.1): true once the
-// service's page has made ANY raw bridge contact. Kept in
-// its own map because "none" media entries are dropped from
-// mediaStates — the flag must survive them. Drives the
-// diagnosis lines in the empty media panel.
-const mediaBridge = new Map();
-const MEDIA_STATUS_LABEL = { playing: "Sedang diputar", paused: "Jeda" };
-const MEDIA_ICON_PLAY = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5z"/></svg>';
-const MEDIA_ICON_PAUSE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><rect x="6.5" y="5" width="3.6" height="14" rx="1"/><rect x="13.9" y="5" width="3.6" height="14" rx="1"/></svg>';
-const MEDIA_ICON_PREV = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M19 6.2v11.6L9.8 12z"/><rect x="5" y="6" width="2.4" height="12" rx="0.8"/></svg>';
-const MEDIA_ICON_NEXT = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M5 6.2v11.6L14.2 12z"/><rect x="16.6" y="6" width="2.4" height="12" rx="0.8"/></svg>';
-function isYouTubeSvc(s) {
-  const h = hostOf(s.url);
-  return h === "youtube.com" || h.endsWith(".youtube.com");
-}
-function refreshMediaDot() {
-  let any = false;
-  for (const m of mediaStates.values()) {
-    if (m.status === "playing" || m.pip) { any = true; break; }
-  }
-  el("mediaDot").hidden = !any;
-}
-function applyMediaEntry(entry) {
-  if (!entry || !entry.id) return;
-  mediaBridge.set(entry.id, !!entry.bridge);
-  if (entry.status === "none" && !entry.pip) mediaStates.delete(entry.id);
-  else mediaStates.set(entry.id, entry);
-  refreshMediaDot();
-  if (!mediaPanel.hidden) renderMediaPanel();
-}
-window.__TAURI__.event.listen("media-changed", (e) => applyMediaEntry(e.payload));
-invoke("media_states").then((list) => {
-  for (const entry of list || []) applyMediaEntry(entry);
-}).catch(() => {});
-
-function renderMediaPanel() {
-  const list = el("mediaList");
-  list.innerHTML = "";
-  const rows = [];
-  for (const s of services) {
-    const m = mediaStates.get(s.id);
-    if (m) rows.push([s, m]);
-  }
-  if (!rows.length) {
-    const d = document.createElement("div");
-    d.className = "dlEmpty";
-    // Diagnosis (v0.10.1): "no rows" has two very different
-    // causes — nothing is playing, or the bridge itself
-    // never connected (no known service has made contact at
-    // all). Say which one it is, then one compact line per
-    // service so a per-service failure (say, only YouTube)
-    // is visible at a glance.
-    const anyBridge = services.some((s) => mediaBridge.get(s.id));
-    d.textContent = anyBridge ? "Tidak ada media yang diputar" : "Jembatan media belum terhubung";
-    list.appendChild(d);
-    for (const s of services) {
-      const line = document.createElement("div");
-      line.className = "mediaDiag";
-      line.textContent = s.name + " — " + (mediaBridge.get(s.id) ? "jembatan terhubung" : "jembatan belum terhubung");
-      list.appendChild(line);
-    }
-    return;
-  }
-  for (const [s, m] of rows) {
-    const row = document.createElement("div");
-    row.className = "dlRow mediaRow";
-    const info = document.createElement("div");
-    info.className = "dlInfo";
-    const title = document.createElement("div");
-    title.className = "dlName";
-    title.textContent = m.title || "Tanpa judul";
-    title.title = m.title || "";
-    const meta = document.createElement("div");
-    meta.className = "dlMeta";
-    const bits = [s.name];
-    if (m.artist) bits.push(m.artist);
-    bits.push(m.pip ? "Picture in picture" : (MEDIA_STATUS_LABEL[m.status] || m.status));
-    meta.textContent = bits.join(" · ");
-    info.append(title, meta);
-    const ctl = document.createElement("div");
-    ctl.className = "mediaCtl";
-    const mk = (html, titleText, action) => {
-      const b = document.createElement("button");
-      b.className = "btnGhost mediaCtlBtn";
-      b.innerHTML = html;
-      b.title = titleText;
-      b.setAttribute("aria-label", titleText + " — " + s.name);
-      b.addEventListener("click", () => invoke("media_control", { id: s.id, action }).catch(() => {}));
-      ctl.appendChild(b);
-    };
-    if (isYouTubeSvc(s)) mk(MEDIA_ICON_PREV, "Sebelumnya", "prev");
-    mk("−10", "Mundur 10 detik", "seek-back");
-    mk(m.status === "playing" ? MEDIA_ICON_PAUSE : MEDIA_ICON_PLAY, m.status === "playing" ? "Jeda" : "Putar", "toggle");
-    mk("+10", "Maju 10 detik", "seek-fwd");
-    if (isYouTubeSvc(s)) mk(MEDIA_ICON_NEXT, "Berikutnya", "next");
-    row.append(info, ctl);
-    list.appendChild(row);
-  }
-}
-el("mediaBtn").addEventListener("click", () => { renderMediaPanel(); openPanel(mediaPanel); });
-el("mediaClose").addEventListener("click", closePanels);
 
 // Bell button (v0.8.5): toggles the notification menu for the
 // active service. The menu is a panel like the others — opening

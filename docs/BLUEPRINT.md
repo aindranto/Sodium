@@ -707,3 +707,84 @@ atau UI yang diubah di rilis ini.
 Seperti sebelumnya: v0.10.2 tidak mengklaim deteksi sudah
 terbukti — buktinya tetap tes Agung (putar video YouTube,
 panel media harus menampilkan judul yang sedang diputar).
+
+## 19. Catatan v0.10.3 (28 Nov 2026) — fitur media dicabut, jembatan dipertahankan
+
+### Keputusan Agung
+
+Tes v0.10.2 membuktikan Jalur B ujung-ke-ujung: video
+YouTube GadgetIn yang diputar di panel pendamping split
+terdeteksi panel media lengkap dengan kontrolnya — jembatan
+bekerja. Tapi tombol PiP melayang tidak muncul di tes itu,
+dan Agung kemudian memutuskan: **"lupakan soal kontrol dan
+PiP ini, kita hapus aja"** — panel media, kontrol putar,
+dan PiP dicabut seluruhnya. Arah panel gaya Zen yang sempat
+ditunjukkan Agung dari screenshot Zen Browser ikut gugur
+bersama keputusan ini (pekerjaan builder ke arah itu
+dihentikan di tengah jalan dan sisa editnya dikembalikan
+ke keadaan v0.10.2 sebelum pencabutan dimulai).
+
+### Yang dicabut (termasuk kabelnya)
+
+1. **UI**: tombol media di topbar (`#mediaBtn` + titik
+   penanda) dan panel media (`#mediaPanel`) beserta semua
+   JS/CSS-nya — termasuk baris diagnosis jembatan v0.10.1
+   di dalam panel, listener `media-changed`, dan
+   pemanggilan `media_states` saat UI start.
+2. **Kontrol**: command `media_control` (keluar juga dari
+   `generate_handler!`) dan handle `window.__sodiumMedia`
+   di skrip halaman.
+3. **PiP**: tombol PiP melayang di skrip (seluruh logika
+   overlay/hover/posisi) dan laporan status `pip`.
+4. **Deteksi media**: pelacakan video + Media Session +
+   laporan `"media"` di skrip; di Rust: `MediaInfo` /
+   `MediaStateEntry` / `media_state`, emit
+   `media-changed`, command `media_states`,
+   `media_protected_labels` + pemakaiannya di
+   `evict_down_to` (layanan yang memutar media TIDAK lagi
+   bebas usir LRU), `schedule_media_evict_check` + field
+   `media_evict_gen`, dan lengan `"media"` di
+   `handle_bridge_message`.
+
+### Yang dipertahankan — fondasi v0.11.0
+
+Pencabutan ini bedahnya selektif: yang dibuang adalah
+fitur medianya, bukan jembatannya.
+
+- **Jembatan WebView2 WebMessage utuh**:
+  `attach_bridge` (nama diganti dari `attach_media_bridge`),
+  `bridge_contacts` (liveness kontak mentah),
+  `bridge_attached` + `ensure_bridge_attached` (pasang
+  ulang saat layanan ditampilkan), parser ketat
+  `handle_bridge_message`, dan pembersihan per-webview
+  `clear_bridge_state` (pengganti `clear_media_state`).
+- **Pencatat notifikasi**: hook `Notification` +
+  `ServiceWorkerRegistration.showNotification` di skrip,
+  lengan `"notif"` di parser, store `page_notifications`
+  in-memory (maks 200) — fondasi panel notifikasi
+  v0.11.0, tidak ikut dicabut.
+- **Hello** `{v:1,t:"hello"}` di skrip + penerimaannya di
+  parser (liveness untuk panel notifikasi nanti).
+- Skrip jembatan berganti nama `bridge/media.js` →
+  `bridge/bridge.js`; isinya kini tinggal guard,
+  host/post/cap, hello, dan hook notifikasi. Suntikan
+  gabungan satu panggilan dengan adblock (v0.10.1) tetap.
+
+### Pelajaran yang tetap disimpan
+
+Deteksi v0.10.2 bekerja dan pelajarannya tidak ikut
+terhapus bersama fiturnya (detail di seksi 18): elemen
+`<video>` YouTube hidup di shadow tree `ytd-player` —
+`querySelectorAll` dan MutationObserver dokumen utama
+tidak menembusnya; pemindaian harus rekursif ke shadow
+root terbuka. Dan init skrip suntikan tidak boleh satu
+try/catch berurutan: satu lemparan di tengah membunuh
+semua langkah sesudahnya, termasuk polling penopang.
+Dua-duanya pengetahuan yang berlaku untuk skrip suntikan
+apa pun di Sodium ke depan, termasuk panel notifikasi.
+
+Catatan versi: ini patch (0.10.3) walau isinya pencabutan
+— yang berubah adalah penghapusan fitur yang baru berumur
+tiga rilis patch dan belum pernah jadi andalan; tidak ada
+kemampuan baru, dan fondasi jembatan/notifikasi yang
+menjadi isi minor 0.10.0 tetap berdiri.
