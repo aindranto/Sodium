@@ -26,8 +26,8 @@ body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--
 .svc.disabled{filter:grayscale(1);opacity:.4}
 .svc.disabled:hover{background:var(--raised)}
 #addBtn{width:44px;height:44px;border-radius:14px;border:1px dashed #3a3d46;background:transparent;color:var(--muted);font-size:22px;cursor:pointer}
-#manageBtn,#settingsBtn{width:44px;height:44px;border-radius:14px;border:1px solid var(--border-strong);background:var(--raised);color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center}
-#manageBtn:hover,#settingsBtn:hover{background:var(--hover);color:var(--text)}
+#settingsBtn{width:44px;height:44px;border-radius:14px;border:1px solid var(--border-strong);background:var(--raised);color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center}
+#settingsBtn:hover{background:var(--hover);color:var(--text)}
 .svc{display:flex;flex-direction:column;align-items:center;justify-content:center}
 .svcName{font-size:9px;line-height:1.15;color:var(--muted);max-width:64px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .svc.active .svcName{color:var(--text)}
@@ -253,8 +253,8 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .swatch.sel{outline:2px solid var(--accent);outline-offset:2px}
 .colorRow{margin-top:12px;font-size:13px;color:var(--muted)}
 
-.svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgAct,.mgFormBtns button,.zoomCtl button,.linkBtns button,.compBtn,#addBtn,#manageBtn,#settingsBtn,.swatch,.glyphBtn,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
-.svc:active,.tile:active,.toolBtn:active,.compBtn:active,#addBtn:active,#manageBtn:active,#settingsBtn:active,.zoomCtl button:active,.linkBtns button:active,.panel button:active,.pickerFoot button:active,.mgAct:active,.mgFormBtns button:active,.customRow button:active{transform:scale(.98)}
+.svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgAct,.mgFormBtns button,.zoomCtl button,.linkBtns button,.compBtn,#addBtn,#settingsBtn,.swatch,.glyphBtn,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
+.svc:active,.tile:active,.toolBtn:active,.compBtn:active,#addBtn:active,#settingsBtn:active,.zoomCtl button:active,.linkBtns button:active,.panel button:active,.pickerFoot button:active,.mgAct:active,.mgFormBtns button:active,.customRow button:active{transform:scale(.98)}
 /* Exit states (v0.8.6): closePanels() adds .closing for one short
    beat before [hidden] lands, so dismissal is faster than entry
    (110ms vs 160-180ms) instead of an instant vanish. These rules

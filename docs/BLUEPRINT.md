@@ -1059,3 +1059,20 @@ diubah, tidak ada perubahan fungsi):
   sama: tinggi tetap, isi scroll.
 - Panel lain (picker, laci notifikasi, dialog) tidak
   disentuh — ukuran mengikuti isi memang normal di sana.
+
+Masih di v0.12.1 (commit kedua, keputusan Agung):
+**tombol Kelola di sidebar dihapus.** Sejak v0.12.0 Panel
+Layanan sudah menjadi seksi di dalam Panel Pengaturan,
+jadi dua tombol sidebar yang membuka panel yang sama
+adalah duplikasi. Yang dihapus: elemen `#manageBtn` di
+`ui/index.html`, listener kliknya di `ui/main.js`, dan
+selektor `#manageBtn` dari `ui/style.css` (grep sesudah
+penghapusan: nol referensi). Sidebar bawah kini tinggal
+tombol tambah layanan (+) dan ikon gir. Fungsi internal
+`openManage()` (membuka Panel Pengaturan di seksi
+Layanan) dipertahankan persis — semua jalur yang
+memanggilnya (kembali dari dialog edit layanan, prompt
+kelompok, konfirmasi, menu konteks, dsb.) tetap
+berfungsi. Pintu masuk Panel Pengaturan yang tersisa:
+ikon gir di sidebar, Ctrl+, (koma), dan aksi
+"Pengaturan" di Quick Switcher.

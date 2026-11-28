@@ -1801,7 +1801,6 @@ el("defaultZoomSel").addEventListener("change", () => {
   showZoom();
 });
 
-el("manageBtn").addEventListener("click", openManage);
 el("manageAdd").addEventListener("click", openPicker);
 el("showNamesToggle").addEventListener("change", () => {
   showNames = el("showNamesToggle").checked;
