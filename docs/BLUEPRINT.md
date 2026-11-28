@@ -312,3 +312,71 @@ yang sudah ada.
 - Sidebar utama tidak berubah: kelompok kosong tidak merender
   pemisah apa pun (render sidebar tetap diturunkan dari layanan).
   Layanan tanpa kelompok tampil persis seperti sebelumnya.
+
+## 14. Catatan v0.9.0 (28 Nov 2026)
+
+Split view: dua layanan tampil berdampingan dalam satu jendela.
+Versi minor (bukan patch) karena ini kemampuan yang sama sekali
+baru, sesuai aturan versi. Desain dikunci Agung sebelum dibangun:
+
+- Model utama + pendamping: panel kiri adalah layanan utama —
+  sidebar, tombol reload, dan lonceng notifikasi mengendalikan
+  dia persis seperti sebelumnya; panel kanan adalah pendamping.
+  Masuk split lewat tombol toggle di bar atas (ikon kolom,
+  menampilkan status aktif) atau menu konteks sidebar "Buka di
+  panel kanan". Saat split aktif tapi pendamping belum dipilih,
+  wilayah kanan diisi pemilih layanan yang dirender UI; memilih
+  satu menjadikannya pendamping. Keluar split memakai tombol
+  yang sama; pendamping diparkir, bukan ditutup atau diusir.
+- Aturan tukar: mengklik layanan yang sedang jadi pendamping
+  (dari sidebar, pintasan, atau ganti cepat — semuanya lewat
+  switchTo) menukar posisi kedua panel: pendamping jadi utama
+  dan sebaliknya, lewat command split_swap, bukan
+  switch_service. Mengklik layanan lain mengganti utama saja.
+- Divider geser bebas: rasio tersimpan (sodium.splitRatio +
+  sodium.splitCompanion di localStorage, mirror config.json
+  lewat CFG_KEYS), bawaan 0,5. Lebar minimum tiap panel ±400px
+  piksel logis; rasio di-clamp dinamis dari lebar konten saat
+  ini (satu rumus clamp yang sama di Rust dan UI). Klik dua
+  kali pada divider mengembalikan 0,5; divider bisa difokus
+  (role="separator", aria-valuenow persen rasio) dan digeser
+  dengan ArrowLeft/ArrowRight.
+- Jebakan drag yang dihindari: webview layanan adalah HWND
+  native anak yang menelan event pointer, jadi drag
+  pointer-capture di lapisan UI akan putus begitu kursor
+  melintasi webview. Seretan dilacak dari sisi Rust: command
+  split_drag_start memulai sesi yang me-poll posisi kursor
+  global (Window::cursor_position) ±tiap 16ms dan status tombol
+  kiri (GetAsyncKeyState lewat FFI, tanpa dependensi baru),
+  memancarkan event "split-ratio" untuk strip divider UI, dan
+  "split-drag-end" saat tombol lepas agar UI menyimpan rasio.
+  Relayout ter-throttle oleh laju poll itu sendiri.
+- Gerbang ganda: tombol split hanya tampil bila lebar efektif
+  monitor tempat jendela berada ≥1920px (fisik / scaleFactor,
+  API monitor Tauri) DAN lebar inner jendela ≥1600px logis.
+  Diperiksa saat startup, resize, pindah monitor, dan perubahan
+  skala (debounce ±150ms, event "split-gate" ke UI). Bila
+  syarat runtuh saat split aktif, split runtuh sendiri dengan
+  aman: pendamping diparkir, pilihan pendamping diingat.
+- LRU: selama split aktif, utama + pendamping bebas eviction —
+  diperlakukan persis seperti pin untuk keperluan eviction
+  (tidak dihitung, tidak bisa jadi korban). Membuat pendamping
+  boleh melampaui max_alive sebagai kasus khusus. Keluar split
+  tidak membunuh apa pun; aturan normal berlanjut pada switch
+  berikutnya.
+- Satu layout pass terpusat di Rust (layout_services) kini
+  menentukan posisi semua webview layanan — dipakai switch,
+  split, resize, restore panel (set_services_visible), dan
+  popup link — dengan kesadaran services_hidden/link_open agar
+  panel UI tidak pernah tertimpa webview yang muncul kembali.
+  Popup link menyembunyikan kedua panel selama terbuka.
+- Persistensi: rasio + id pendamping tersimpan; mode split
+  dipulihkan saat startup hanya bila gerbang lolos saat itu dan
+  pendamping tersimpan masih layak. Kasus tepi deterministik:
+  pendamping dinonaktifkan/dihapus → slot kanan kosong dan
+  pemilih tampil lagi; utama dinonaktifkan/dihapus → split
+  runtuh; pendamping yang URL-nya diganti dibuat ulang di panel
+  kanan; membuka pendamping pertama kali melewati jalur buka
+  yang sama dengan switch biasa (zoom didorong dulu, dialog
+  tanya izin v0.8.8 tetap terpicu). Zoom tetap per layanan per
+  panel. Tidak ada animasi bounds untuk webview native.

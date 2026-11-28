@@ -71,7 +71,7 @@ const store = {
 // side: localStorage is the working copy, but it dies with the
 // webview profile data; config.json survives that. Saves are
 // debounced and revisioned; at startup a newer config.json wins.
-const CFG_KEYS = ["sodium.services", "sodium.pinned", "sodium.disabled", "sodium.groups", "sodium.showNames", "sodium.lastActive", "sodium.onboarded", "sodium.zoom", "sodium.zoomByService", "sodium.maxAlive", "sodium.downloads", "sodium.lastUpdateCheck", "sodium.iconSize", "sodium.ytAdblock", "sodium.ytAdblockInfo", "sodium.ytAdblockScript"];
+const CFG_KEYS = ["sodium.services", "sodium.pinned", "sodium.disabled", "sodium.groups", "sodium.showNames", "sodium.lastActive", "sodium.onboarded", "sodium.zoom", "sodium.zoomByService", "sodium.maxAlive", "sodium.downloads", "sodium.lastUpdateCheck", "sodium.iconSize", "sodium.ytAdblock", "sodium.ytAdblockInfo", "sodium.ytAdblockScript", "sodium.splitRatio", "sodium.splitCompanion"];
 let cfgRev = parseInt(localStorage.getItem("sodium.cfgRev") || "0", 10) || 0;
 let cfgTimer = null;
 let applyingConfig = false;
@@ -191,6 +191,152 @@ function loadGroups() {
   if (changed) saveGroups();
 }
 loadGroups();
+
+// ------------------------------------------------------------------
+// Split view (v0.9.0): two services side by side — the main
+// (left) pane, which the sidebar / reload / bell keep
+// controlling exactly as before, and a companion (right) pane.
+// Rust owns the native layout (bounds, the double gate, the
+// cursor-polled divider drag); this side owns the choices: the
+// ratio and the companion id are persisted here (localStorage +
+// config.json mirror), and the mode itself is restored at
+// startup only when the gate passes at that moment.
+//
+// The geometry constants mirror the Rust layout (DIVIDER_W /
+// MIN_PANE_W in lib.rs) so the divider strip and the companion
+// picker land exactly on the boundary Rust computes.
+const SPLIT_DIVIDER_W = 6;
+const SPLIT_MIN_PANE = 400;
+let splitOn = false;
+let splitGateOk = false;
+let splitRatio = 0.5;
+let companionId = null;
+function reloadSplitPrefs() {
+  const r = parseFloat(localStorage.getItem("sodium.splitRatio") || "0.5");
+  splitRatio = Number.isFinite(r) && r > 0 && r < 1 ? r : 0.5;
+  companionId = localStorage.getItem("sodium.splitCompanion") || null;
+}
+reloadSplitPrefs();
+function saveSplitPrefs() {
+  localStorage.setItem("sodium.splitRatio", String(splitRatio));
+  if (companionId) localStorage.setItem("sodium.splitCompanion", companionId);
+  else localStorage.removeItem("sodium.splitCompanion");
+  scheduleConfigSave();
+}
+// The main pane's width in logical px for the current window,
+// clamped exactly like the Rust layout clamps it.
+function splitMainW() {
+  const avail = Math.max(0, window.innerWidth - 76 - SPLIT_DIVIDER_W);
+  if (avail <= 0) return 0;
+  const minMain = Math.min(SPLIT_MIN_PANE, avail / 2);
+  return Math.min(Math.max(avail * splitRatio, minMain), avail - minMain);
+}
+function refreshSplitBtn() {
+  const btn = el("splitBtn");
+  btn.hidden = !splitGateOk;
+  btn.classList.toggle("on", splitOn);
+  btn.setAttribute("aria-pressed", splitOn ? "true" : "false");
+  btn.title = splitOn ? "Matikan tampilan split" : "Tampilan split (dua layanan berdampingan)";
+}
+// Position the divider strip and the companion picker over the
+// content area. Called on every split state change and on
+// window resize; cheap style writes only, no layout reads.
+function layoutSplitChrome() {
+  const div = el("splitDivider");
+  const picker = el("splitPicker");
+  if (!splitOn) { div.hidden = true; picker.hidden = true; return; }
+  const mainW = splitMainW();
+  div.hidden = false;
+  div.style.left = (76 + mainW) + "px";
+  const avail = Math.max(1, window.innerWidth - 76 - SPLIT_DIVIDER_W);
+  div.setAttribute("aria-valuenow", String(Math.round(mainW / avail * 100)));
+  if (companionId) {
+    picker.hidden = true;
+  } else {
+    picker.hidden = false;
+    picker.style.left = (76 + mainW + SPLIT_DIVIDER_W) + "px";
+  }
+}
+function renderSplitPicker() {
+  const grid = el("splitGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  for (const s of services) {
+    if (s.id === activeId || disabled.has(s.id)) continue;
+    const t = document.createElement("button");
+    t.type = "button";
+    t.className = "tile";
+    t.title = "Jadikan " + s.name + " pendamping di panel kanan";
+    const ic = document.createElement("span");
+    ic.className = "tileIcon";
+    if (s.img) {
+      const im = document.createElement("img");
+      im.className = "svcImg"; im.src = s.img; im.alt = "";
+      const f = imgFilter(s); if (f) im.style.filter = f;
+      im.onerror = () => { im.replaceWith(iconVisual(s, 28)); if (s.color) ic.style.background = s.color; };
+      ic.appendChild(im);
+    } else {
+      if (s.color) ic.style.background = s.color;
+      ic.appendChild(iconVisual(s, 28));
+    }
+    const nm = document.createElement("span");
+    nm.className = "tileName"; nm.textContent = s.name;
+    t.append(ic, nm);
+    t.addEventListener("click", () => setCompanion(s));
+    grid.appendChild(t);
+  }
+  if (!grid.children.length) {
+    const d = document.createElement("div");
+    d.className = "pickerEmpty";
+    d.textContent = "Tidak ada layanan lain yang bisa jadi pendamping. Tambah layanan dulu lewat tombol + di sidebar.";
+    grid.appendChild(d);
+  }
+}
+async function enterSplit(restoreCompanion = true) {
+  if (!activeId || !splitGateOk || splitOn) return;
+  splitOn = true;
+  refreshSplitBtn();
+  try { await invoke("split_enter", { ratio: splitRatio }); } catch { /* gate still rules in Rust */ }
+  if (restoreCompanion && companionId) {
+    const comp = services.find(s => s.id === companionId);
+    if (comp && comp.id !== activeId && !disabled.has(comp.id)) {
+      await setCompanion(comp);
+    } else {
+      companionId = null;
+      saveSplitPrefs();
+    }
+  }
+  layoutSplitChrome();
+  if (!companionId) renderSplitPicker();
+}
+async function exitSplit() {
+  if (!splitOn) return;
+  splitOn = false;
+  refreshSplitBtn();
+  layoutSplitChrome();
+  try { await invoke("split_exit"); } catch { /* nothing to undo */ }
+}
+// Pick a companion: its webview is created through the same
+// path as a normal switch (own zoom pushed first, profile and
+// permission handlers from Rust's create path), so the
+// first-open permission ask (v0.8.8) fires for it too.
+async function setCompanion(s) {
+  companionId = s.id;
+  saveSplitPrefs();
+  try {
+    await invoke("set_service_zoom", { id: s.id, scale: zoomFor(s.id) });
+    await invoke("split_set_companion", { id: s.id, url: s.url });
+  } catch { /* pane stays empty; the picker remains available */ }
+  layoutSplitChrome();
+  if (!s.permAsked) openPermDialog(s);
+}
+async function clearCompanion() {
+  companionId = null;
+  saveSplitPrefs();
+  try { await invoke("split_set_companion", { id: null, url: null }); } catch { /* already gone */ }
+  layoutSplitChrome();
+  if (splitOn) renderSplitPicker();
+}
 
 // Top-bar bell (v0.8.5): a second door to the same per-service
 // notification setting as the edit dialog. The icon mirrors the
@@ -415,6 +561,11 @@ async function openCtx(s) {
   el("ctxTitle").textContent = s.name;
   el("ctxPin").textContent = pinned.has(s.id) ? "Unpin" : "Pin (tetap hidup buat notif)";
   el("ctxDisable").textContent = disabled.has(s.id) ? "Aktifkan lagi" : "Nonaktifkan (matikan total sementara)";
+  // "Buka di panel kanan" only makes sense for a service that
+  // can actually open and is not already one of the two panes,
+  // and only while the split gate passes (the button that
+  // reveals the feature is hidden otherwise).
+  el("ctxSplit").hidden = !splitGateOk || disabled.has(s.id) || s.id === activeId || (splitOn && s.id === companionId);
   el("ctxAdblock").hidden = !isYouTubeService(s);
   await openPanel(ctxPanel);
   el("ctxPin").focus();
@@ -553,6 +704,9 @@ function render() {
   popId = null;
   positionPill(false);
   refreshNotifBtn();
+  refreshSplitBtn();
+  if (splitOn && !companionId) renderSplitPicker();
+  layoutSplitChrome();
 }
 
 // Discord-style active indicator: a small accent pill at the left
@@ -586,6 +740,24 @@ async function switchTo(s) {
   // asks first instead of being discarded silently.
   if (editIsDirty()) { confirmDiscardEdit(() => switchTo(s)); return; }
   if (allPanels.some(p => !p.hidden)) await closePanels();
+  // Split view: "switching" to the service that is currently
+  // the companion swaps the two panes instead of switching —
+  // the companion becomes the main service and the main becomes
+  // the companion. Both webviews already exist, so this goes
+  // through split_swap, never switch_service (which would park
+  // the old main and collapse the pair onto one service).
+  if (splitOn && companionId && activeId && s.id === companionId && s.id !== activeId) {
+    const prevMainId = activeId;
+    try { await invoke("split_swap"); } catch { return; }
+    companionId = prevMainId;
+    saveSplitPrefs();
+    activeId = s.id;
+    localStorage.setItem("sodium.lastActive", s.id); scheduleConfigSave();
+    el("activeName").textContent = s.name;
+    render();
+    showZoom();
+    return;
+  }
   activeId = s.id; render();
   localStorage.setItem("sodium.lastActive", s.id); scheduleConfigSave();
   el("activeName").textContent = s.name;
@@ -704,6 +876,17 @@ el("ctxPin").addEventListener("click", async () => {
   if (!ctxService) return;
   togglePin(ctxService);
   await closePanels();
+});
+el("ctxSplit").addEventListener("click", async () => {
+  if (!ctxService) return;
+  const s = ctxService;
+  await closePanels();
+  // With no main service yet there is nothing to accompany:
+  // the service simply becomes the main one.
+  if (!activeId) { switchTo(s); return; }
+  if (!splitOn) await enterSplit(false);
+  if (!splitOn) return; // the gate failed between menu and click
+  if (companionId !== s.id) await setCompanion(s);
 });
 el("ctxDisable").addEventListener("click", async () => {
   if (!ctxService) return;
@@ -864,6 +1047,12 @@ async function setServiceDisabled(s, off) {
   if (!off) {
     disabled.delete(id);
   } else {
+    // Split view edge cases (v0.9.0): disabling the companion
+    // empties its slot (the picker returns if split is still
+    // on); disabling the main service collapses split entirely
+    // (the companion is parked by split_exit, never closed).
+    if (splitOn && companionId === id) await clearCompanion();
+    else if (splitOn && activeId === id) await exitSplit();
     disabled.add(id);
     await invoke("close_webview", { id });
     if (activeId === id) {
@@ -906,6 +1095,10 @@ function duplicateService(srcSvc) {
 // (close_webview, not close_service: the latter deletes the profile —
 // see the v0.8.7 note in setServiceDisabled.)
 async function deleteService(id) {
+  // Same split edge cases as disabling: a deleted companion
+  // empties the slot; a deleted main service collapses split.
+  if (splitOn && companionId === id) await clearCompanion();
+  else if (splitOn && activeId === id) await exitSplit();
   services = services.filter(x => x.id !== id);
   store.save(services);
   if (pinned.has(id)) { pinned.delete(id); store.savePinned(pinned); invoke("set_pinned", { id, pinned: false }); }
@@ -1259,6 +1452,10 @@ el("editSave").addEventListener("click", async () => {
     }
     render();
     if (activeId === s.id && !wantDisabled) await switchTo(s);
+    // A companion whose URL changed had its webview closed
+    // above (and Rust cleared its companion slot): re-create it
+    // at the new URL so the right pane does not stay empty.
+    if (splitOn && companionId === s.id && !wantDisabled) await setCompanion(s);
   }
   if (wantDisabled !== wasDisabled) await setServiceDisabled(s, wantDisabled);
   render();
@@ -1936,6 +2133,72 @@ for (const b of notifMenu.querySelectorAll(".popItem")) {
 }
 
 // ------------------------------------------------------------------
+// Split view controls (v0.9.0). The toggle only exists while
+// the double gate passes (Rust reports it at startup and on
+// every "split-gate" change). The divider's drag is NOT tracked
+// here: native service webviews swallow pointer events, so a
+// pointer-capture drag would die mid-gesture — the strip's
+// pointerdown only starts Rust's cursor-polling session, and
+// the strip follows the "split-ratio" events it emits.
+el("splitBtn").addEventListener("click", async () => {
+  if (splitOn) await exitSplit();
+  else await enterSplit();
+});
+const splitDivider = el("splitDivider");
+splitDivider.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || !splitOn) return;
+  e.preventDefault();
+  splitDivider.classList.add("dragging");
+  invoke("split_drag_start").catch(() => splitDivider.classList.remove("dragging"));
+});
+// Fallback cleanup if the pointer comes up over the UI itself;
+// the authoritative end is Rust's "split-drag-end" event.
+splitDivider.addEventListener("pointerup", () => splitDivider.classList.remove("dragging"));
+splitDivider.addEventListener("dblclick", async () => {
+  splitRatio = 0.5;
+  saveSplitPrefs();
+  try { await invoke("split_set_ratio", { ratio: 0.5 }); } catch { /* layout keeps the old ratio */ }
+  layoutSplitChrome();
+});
+splitDivider.addEventListener("keydown", async (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  const avail = Math.max(1, window.innerWidth - 76 - SPLIT_DIVIDER_W);
+  const cur = splitMainW() / avail;
+  const next = Math.min(0.95, Math.max(0.05, cur + (e.key === "ArrowRight" ? 0.02 : -0.02)));
+  splitRatio = next;
+  saveSplitPrefs();
+  try { await invoke("split_set_ratio", { ratio: next }); } catch { /* layout keeps the old ratio */ }
+  layoutSplitChrome();
+});
+window.__TAURI__.event.listen("split-ratio", (e) => {
+  const r = Number(e.payload);
+  if (Number.isFinite(r) && r > 0 && r < 1) splitRatio = r;
+  layoutSplitChrome();
+});
+window.__TAURI__.event.listen("split-drag-end", (e) => {
+  const r = Number(e.payload);
+  if (Number.isFinite(r) && r > 0 && r < 1) splitRatio = r;
+  saveSplitPrefs();
+  splitDivider.classList.remove("dragging");
+  layoutSplitChrome();
+});
+window.__TAURI__.event.listen("split-gate", (e) => {
+  splitGateOk = !!e.payload;
+  if (!splitGateOk && splitOn) {
+    // The gate collapsed under an active split: Rust already
+    // parked the companion and restored the single layout.
+    // Mirror it here — the companion choice stays stored, so
+    // re-entering split (once the gate passes again) brings
+    // the same companion back.
+    splitOn = false;
+    layoutSplitChrome();
+  }
+  refreshSplitBtn();
+});
+window.addEventListener("resize", () => layoutSplitChrome());
+
+// ------------------------------------------------------------------
 // First-open permission dialog (v0.8.8). WebView2 has no native
 // permission prompt, so Sodium asks once itself: the first time a
 // service is opened successfully and it has never been asked
@@ -2435,6 +2698,7 @@ async function applyImport(snap) {
   pinned = store.pinned();
   disabled = store.disabled();
   loadGroups();
+  reloadSplitPrefs();
   showNames = localStorage.getItem("sodium.showNames") === "1";
   iconSize = parseInt(localStorage.getItem("sodium.iconSize") || "48", 10) || 48;
   applyIconSize();
@@ -2468,6 +2732,16 @@ async function applyImport(snap) {
     el("welcome").style.display = "";
     showZoom();
   }
+  // Split view follows the imported snapshot: a companion that
+  // no longer exists (or is now the main service) is cleared,
+  // and losing the main service collapses split.
+  if (companionId && (!services.some(s => s.id === companionId) || companionId === activeId)) {
+    companionId = null;
+    saveSplitPrefs();
+    invoke("split_set_companion", { id: null, url: null }).catch(() => {});
+  }
+  if (activeGone && splitOn) await exitSplit();
+  layoutSplitChrome();
 
   render();
   renderManage();
@@ -2541,6 +2815,12 @@ init();
 async function init() {
   await applyConfigFromRust();
 
+  // Split gate, asked once up front; Rust recomputes it on
+  // resize / move / scale changes and reports flips as
+  // "split-gate" events.
+  try { splitGateOk = await invoke("split_gate"); } catch { splitGateOk = false; }
+  refreshSplitBtn();
+
   // Adblock state goes to Rust before any service webview is
   // created below: the script and the switch only apply at
   // webview-creation time.
@@ -2589,7 +2869,12 @@ async function init() {
   } else {
     const lastId = localStorage.getItem("sodium.lastActive");
     const last = services.find(s => s.id === lastId);
-    if (last && !disabled.has(last.id)) switchTo(last);
+    if (last && !disabled.has(last.id)) await switchTo(last);
+    // Split view restore: the ratio and companion choice are
+    // persisted, but the mode itself only comes back when the
+    // gate passes right now (enterSplit checks) and the stored
+    // companion is still usable next to the restored main.
+    await enterSplit();
   }
   scheduleAutoUpdateChecks();
   scheduleYtAdblockCheck();
@@ -2616,6 +2901,7 @@ async function applyConfigFromRust() {
     pinned = store.pinned();
     disabled = store.disabled();
     loadGroups();
+    reloadSplitPrefs();
     showNames = localStorage.getItem("sodium.showNames") === "1";
     iconSize = parseInt(localStorage.getItem("sodium.iconSize") || "48", 10) || 48;
     applyIconSize();

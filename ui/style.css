@@ -295,3 +295,22 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .mgAddGroup:hover{background:var(--raised);color:var(--text)}
 .popItem[aria-disabled="true"]{opacity:.45;cursor:default}
 .popItem[aria-disabled="true"]:hover{background:transparent}
+
+/* Split view (v0.9.0): the top-bar toggle shows its on state
+   like the bell's modes; the divider strip is rendered by this
+   UI in the 6px gap the Rust layout leaves between the two
+   native panes — a 2px line that lights up on hover, focus and
+   during the Rust-polled drag; the companion picker fills the
+   empty right pane region (left edge set from JS to match the
+   layout's main-pane width). No bounds animation anywhere: the
+   panes are native webviews and move instantly. */
+#splitBtn.on{background:var(--accent-dim);color:var(--accent)}
+#splitBtn[hidden]{display:none}
+#splitDivider{position:fixed;top:44px;bottom:0;width:6px;cursor:ew-resize;z-index:8;touch-action:none}
+#splitDivider::after{content:"";position:absolute;left:2px;top:0;bottom:0;width:2px;border-radius:1px;background:var(--border-strong)}
+#splitDivider:hover::after,#splitDivider:focus-visible::after,#splitDivider.dragging::after{background:var(--accent)}
+#splitDivider[hidden]{display:none}
+#splitPicker{position:fixed;top:44px;right:0;bottom:0;background:var(--bg);z-index:7;padding:20px;display:flex;flex-direction:column}
+#splitPicker[hidden]{display:none}
+#splitPicker h2{margin:0 0 6px;font-size:18px;font-weight:600}
+#splitPicker .pickerGrid{margin:12px 0 0}

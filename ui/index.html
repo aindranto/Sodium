@@ -17,6 +17,7 @@
     <div class="topLeft">
       <button id="reloadBtn" class="toolBtn" title="Muat ulang layanan aktif" aria-label="Muat ulang layanan aktif"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button>
       <button id="notifBtn" class="toolBtn" title="Notifikasi" aria-label="Pengaturan notifikasi layanan aktif" aria-haspopup="menu" hidden></button>
+      <button id="splitBtn" class="toolBtn" title="Tampilan split" aria-label="Aktifkan atau matikan tampilan split" aria-pressed="false" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M12 5v14"/></svg></button>
       <div id="activeName">Sodium</div>
     </div>
     <div id="toast" role="status" aria-live="polite" hidden></div>
@@ -49,6 +50,14 @@
       <button id="linkExternal">Buka di browser</button>
       <button id="linkClose" title="Tutup popup" aria-label="Tutup popup">✕</button>
     </div>
+  </div>
+
+  <div id="splitDivider" role="separator" aria-orientation="vertical" aria-label="Pembatas panel split — seret, atau fokus lalu pakai tombol panah kiri/kanan untuk mengubah ukuran panel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0" hidden></div>
+
+  <div id="splitPicker" hidden>
+    <h2>Pilih layanan pendamping</h2>
+    <p class="muted">Layanan ini tampil di panel kanan, berdampingan dengan layanan utama. Matikan tampilan split dari tombol split di bar atas untuk menutup pemilih ini.</p>
+    <div id="splitGrid" class="pickerGrid"></div>
   </div>
 
   <main id="welcome">
@@ -105,6 +114,7 @@
     <h2 id="ctxTitle">Layanan</h2>
     <div class="panelBtns col">
       <button id="ctxPin" class="btnPrimary">Pin (tetap hidup buat notif)</button>
+      <button id="ctxSplit" class="btnGhost">Buka di panel kanan</button>
       <button id="ctxDisable" class="btnGhost">Nonaktifkan layanan</button>
       <button id="ctxManage" class="btnGhost">Kelola layanan</button>
       <button id="ctxAdblock" class="btnGhost" hidden>Adblock YouTube</button>

@@ -22,6 +22,16 @@ const POPUP_LABEL: &str = "link-popup";
 /// Label of the webview that renders Sodium's own UI inside the main window.
 const UI_LABEL: &str = "ui";
 
+/// Width of the divider strip between the two panes in split
+/// view (v0.9.0). The strip is rendered by Sodium's own UI in the
+/// gap the layout leaves between the main and companion webviews.
+const DIVIDER_W: f64 = 6.0;
+
+/// Minimum logical width of either pane in split view. The split
+/// ratio is clamped against the current content width so neither
+/// pane can be dragged (or restored) below this.
+const MIN_PANE_W: f64 = 400.0;
+
 #[derive(Default)]
 struct AppState {
     /// Labels of alive service webviews, most-recently-used first.
@@ -59,6 +69,38 @@ struct AppState {
     active: Mutex<Option<String>>,
     /// Whether the link popup is currently open over the active service.
     link_open: Mutex<bool>,
+    /// Split view (v0.9.0): whether split mode is on. The layout
+    /// shows the two panes only while this is on AND the double
+    /// gate passes (see gate_ok).
+    split_mode: Mutex<bool>,
+    /// Label of the companion (right-pane) service webview, if one
+    /// is chosen. Kept across split exit/re-enter and gate
+    /// collapses — leaving split parks the companion, it never
+    /// closes it — and cleared only when the UI picks another
+    /// companion (or none) or the webview is destroyed.
+    companion: Mutex<Option<String>>,
+    /// Split ratio: the main pane's share of the width available
+    /// to the two panes (0.5 = even). Pushed by the UI (which
+    /// persists it) and by the divider drag session; the layout
+    /// clamps it against the current content width.
+    split_ratio: Mutex<f64>,
+    /// Whether the split double gate currently passes: the
+    /// monitor the window sits on offers >= 1920 logical px of
+    /// width AND the window's inner width is >= 1600 logical px.
+    /// Recomputed (debounced) on resize/move/scale changes; the
+    /// UI learns about changes through the "split-gate" event.
+    gate_ok: Mutex<bool>,
+    /// Generation counter for debouncing gate rechecks: a burst
+    /// of move/resize events schedules several checks, only the
+    /// newest one actually recomputes.
+    gate_gen: std::sync::atomic::AtomicU64,
+    /// True while service webviews are hidden because a UI panel
+    /// is open (see set_services_visible). The layout pass reads
+    /// it so a resize or split change mid-panel cannot flash the
+    /// services back over the panel.
+    services_hidden: Mutex<bool>,
+    /// True while a divider drag session is polling the cursor.
+    split_dragging: std::sync::atomic::AtomicBool,
     /// Folder the Save As dialog starts in: the user's Downloads folder
     /// at first, then the last folder a download was saved to.
     download_dir: std::sync::Arc<Mutex<std::path::PathBuf>>,
@@ -160,6 +202,168 @@ const PARK_POS: f64 = -32000.0;
 fn park_webview(wv: &tauri::Webview) {
     let _ = wv.set_position(LogicalPosition::new(PARK_POS, PARK_POS));
     let _ = wv.show();
+}
+
+/// Clamp a split ratio so both panes keep at least MIN_PANE_W of
+/// the available width (or halve the space when there is not
+/// room for two minimum panes — impossible while the gate
+/// passes, but the clamp stays total). Returns the effective
+/// ratio: the main pane's share of `content_w - DIVIDER_W`.
+fn clamp_split_ratio(ratio: f64, content_w: f64) -> f64 {
+    let avail = (content_w - DIVIDER_W).max(0.0);
+    if avail <= 0.0 {
+        return 0.5;
+    }
+    let min_main = MIN_PANE_W.min(avail / 2.0);
+    let main = (avail * ratio).clamp(min_main, avail - min_main);
+    main / avail
+}
+
+/// The one layout pass for service webviews: who sits where.
+/// Single mode: the active service fills the content area. Split
+/// mode (on + gate passing): the active service is the main
+/// (left) pane at the split ratio and the companion — when one
+/// is chosen and alive — the right one, with the divider gap
+/// between them; with no companion the right side stays empty
+/// for the UI's companion picker. Everything else is parked
+/// off-screen at full content size. While a UI panel or the link
+/// popup owns the screen (services_hidden / link_open) nothing
+/// is shown, but positions are still updated so the restore is
+/// exact.
+fn layout_services(app: &tauri::AppHandle, state: &AppState, window: &tauri::Window) {
+    let (cpos, csize) = service_bounds(window);
+    let active = state.active.lock().unwrap().clone();
+    let companion = state.companion.lock().unwrap().clone();
+    let split = *state.split_mode.lock().unwrap() && *state.gate_ok.lock().unwrap();
+    let blocked = *state.services_hidden.lock().unwrap() || *state.link_open.lock().unwrap();
+    let avail = csize.width - DIVIDER_W;
+    let main_w = avail * clamp_split_ratio(*state.split_ratio.lock().unwrap(), csize.width);
+    for wv in app.webviews().values() {
+        let label = wv.label();
+        if !label.starts_with("service-") {
+            continue;
+        }
+        if Some(label) == active.as_deref() {
+            if split {
+                let _ = wv.set_position(cpos);
+                let _ = wv.set_size(LogicalSize::new(main_w, csize.height));
+            } else {
+                let _ = wv.set_position(cpos);
+                let _ = wv.set_size(csize);
+            }
+            if blocked {
+                let _ = wv.hide();
+            } else {
+                let _ = wv.show();
+            }
+        } else if split && Some(label) == companion.as_deref() {
+            let _ = wv.set_position(LogicalPosition::new(cpos.x + main_w + DIVIDER_W, cpos.y));
+            let _ = wv.set_size(LogicalSize::new(avail - main_w, csize.height));
+            if blocked {
+                let _ = wv.hide();
+            } else {
+                let _ = wv.show();
+            }
+        } else {
+            // Parked: off-screen at full content size (already
+            // correct when activated), still shown so the page
+            // keeps running unthrottled — unless the UI owns the
+            // screen, in which case it hides like everything else.
+            let _ = wv.set_size(csize);
+            if blocked {
+                let _ = wv.set_position(LogicalPosition::new(PARK_POS, PARK_POS));
+                let _ = wv.hide();
+            } else {
+                park_webview(wv);
+            }
+        }
+    }
+}
+
+/// The split view double gate: the monitor the window sits on
+/// must offer at least 1920 logical px of width (physical size /
+/// scale factor), and the window's inner width must be at least
+/// 1600 logical px. Below either, two panes side by side get too
+/// cramped to be useful, so the feature hides entirely.
+fn compute_split_gate(window: &tauri::Window) -> bool {
+    if logical_inner_size(window).width < 1600.0 {
+        return false;
+    }
+    match window.current_monitor() {
+        Ok(Some(m)) => {
+            let scale = m.scale_factor();
+            scale > 0.0 && (m.size().width as f64 / scale) >= 1920.0
+        }
+        _ => false,
+    }
+}
+
+/// Recompute the gate (called debounced after resize / move /
+/// scale changes). On a pass-to-fail transition while split is
+/// on, split collapses safely: split mode turns off and the
+/// layout pass parks the companion — the choice itself is kept,
+/// in Rust's companion slot and in the UI's stored preference,
+/// for the next entry. The UI is told through "split-gate".
+fn refresh_split_gate(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let window = match state.main_window.lock().unwrap().clone() {
+        Some(w) => w,
+        None => return,
+    };
+    let ok = compute_split_gate(&window);
+    let changed = {
+        let mut g = state.gate_ok.lock().unwrap();
+        let changed = *g != ok;
+        *g = ok;
+        changed
+    };
+    if !changed {
+        return;
+    }
+    if !ok && *state.split_mode.lock().unwrap() {
+        *state.split_mode.lock().unwrap() = false;
+        layout_services(app, &state, &window);
+    }
+    let _ = app.emit_to(UI_LABEL, "split-gate", ok);
+}
+
+/// Debounced gate recheck (~150ms): dragging the window between
+/// monitors fires move events continuously, so each event only
+/// schedules a check and a generation counter lets just the
+/// newest scheduled check recompute.
+fn schedule_gate_check(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let gen = state
+        .gate_gen
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        + 1;
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let state = handle.state::<AppState>();
+        if state.gate_gen.load(std::sync::atomic::Ordering::SeqCst) == gen {
+            refresh_split_gate(&handle);
+        }
+    });
+}
+
+/// Labels exempt from eviction while split view is on: the two
+/// visible panes. They are treated exactly like pinned services
+/// for eviction purposes — excluded from the alive count and
+/// from victimhood — because a pane the user is looking at must
+/// never be destroyed under them. Outside split mode this is
+/// empty, so single-mode eviction behaves exactly as before.
+fn split_protected_labels(state: &AppState) -> HashSet<String> {
+    let mut set = HashSet::new();
+    if *state.split_mode.lock().unwrap() {
+        if let Some(a) = state.active.lock().unwrap().clone() {
+            set.insert(a);
+        }
+        if let Some(c) = state.companion.lock().unwrap().clone() {
+            set.insert(c);
+        }
+    }
+    set
 }
 
 /// Download handler for a service or popup webview: without it,
@@ -471,6 +675,10 @@ async fn start_service_hidden(
     if !mru.contains(&label) {
         mru.push(label);
     }
+    // Keep the layout authoritative: if split view is on and this
+    // service is one of the panes, it belongs in its pane, not in
+    // the park.
+    layout_services(&app, &state, &window);
     Ok(())
 }
 
@@ -584,11 +792,6 @@ async fn switch_service(
             }
         }
         create_service_webview(&app, &state, &window, &id, &url)?;
-    } else if let Some(wv) = app.get_webview(&label) {
-        let (pos, size) = service_bounds(&window);
-        let _ = wv.set_position(pos);
-        let _ = wv.set_size(size);
-        let _ = wv.set_focus();
     }
 
     // Apply this service's own zoom level to the (possibly just created)
@@ -599,16 +802,15 @@ async fn switch_service(
     }
 
     // Native webviews stack with the newest on top, so only the
-    // target may sit in the service area; the rest are parked
-    // off-screen (not hidden — see park_webview) so their pages
-    // keep running unthrottled.
+    // target may sit in the service area; the layout pass puts it
+    // there (full area, or the main pane in split view), keeps a
+    // split companion in its pane, and parks the rest off-screen
+    // (not hidden — see park_webview) so their pages keep running
+    // unthrottled.
     *state.active.lock().unwrap() = Some(label.clone());
-    for wv in app.webviews().values() {
-        if wv.label() == label {
-            let _ = wv.show();
-        } else if wv.label().starts_with("service-") {
-            park_webview(wv);
-        }
+    layout_services(&app, &state, &window);
+    if let Some(wv) = app.get_webview(&label) {
+        let _ = wv.set_focus();
     }
 
     {
@@ -640,9 +842,13 @@ fn evict_down_to(app: &tauri::AppHandle, state: &AppState, target: usize) {
         let victim: Option<String> = {
             let mru = state.alive_mru.lock().unwrap();
             let pinned = state.pinned.lock().unwrap();
+            // While split view is on, its two panes are exempt
+            // exactly like pinned services: they neither count
+            // towards the limit nor can be chosen as victims.
+            let protected = split_protected_labels(state);
             let non_pinned: Vec<&String> = mru
                 .iter()
-                .filter(|l| !pinned.contains(id_from_label(l)))
+                .filter(|l| !pinned.contains(id_from_label(l)) && !protected.contains(*l))
                 .collect();
             if non_pinned.len() <= target {
                 None
@@ -673,38 +879,33 @@ fn evict_down_to(app: &tauri::AppHandle, state: &AppState, target: usize) {
 /// Hide or show all alive service webviews while a UI panel is
 /// open: native webviews layer above the UI, so they would cover
 /// the panel. Hiding is not destroying; sessions stay alive. When
-/// the panels close, the layout is restored the way switch_service
-/// leaves it: the active service at its bounds, the rest parked
-/// off-screen (see park_webview).
+/// the panels close, the layout pass restores the arrangement —
+/// the active service (and a split companion) in their panes,
+/// the rest parked off-screen (see park_webview). While the link
+/// popup is open, the services stay hidden behind it.
 #[tauri::command]
 fn set_services_visible(app: tauri::AppHandle, state: State<'_, AppState>, visible: bool) {
-    let active = state.active.lock().unwrap().clone();
+    *state.services_hidden.lock().unwrap() = !visible;
     let link_open = *state.link_open.lock().unwrap();
-    // Bounds for bringing the active service back when panels close.
-    let bounds = app.get_window("main").map(|w| service_bounds(&w));
-    for wv in app.webviews().values() {
-        if wv.label().starts_with("service-") {
-            // "visible" means "panels closed": restore the layout,
-            // never the whole stack at once — and while the link
-            // popup is open, the services stay hidden behind it.
-            if visible && !link_open && active.as_deref() == Some(wv.label()) {
-                if let Some((pos, size)) = bounds {
-                    let _ = wv.set_position(pos);
-                    let _ = wv.set_size(size);
+    if !visible || link_open {
+        for wv in app.webviews().values() {
+            if wv.label().starts_with("service-") {
+                let _ = wv.hide();
+            } else if wv.label() == POPUP_LABEL {
+                if visible && link_open {
+                    let _ = wv.show();
+                } else {
+                    let _ = wv.hide();
                 }
-                let _ = wv.show();
-            } else if visible && !link_open {
-                park_webview(wv);
-            } else {
-                let _ = wv.hide();
-            }
-        } else if wv.label() == POPUP_LABEL {
-            if visible && link_open {
-                let _ = wv.show();
-            } else {
-                let _ = wv.hide();
             }
         }
+        return;
+    }
+    if let Some(window) = state.main_window.lock().unwrap().clone() {
+        layout_services(&app, &state, &window);
+    }
+    if let Some(wv) = app.get_webview(POPUP_LABEL) {
+        let _ = wv.hide();
     }
 }
 
@@ -733,6 +934,14 @@ async fn open_link_popup(
     let active = state.active.lock().unwrap().clone();
     if let Some(active_label) = &active {
         if let Some(wv) = app.get_webview(active_label) {
+            let _ = wv.hide();
+        }
+    }
+    // In split view the companion pane would cover the popup's
+    // right half the same way, so it hides too.
+    let companion = state.companion.lock().unwrap().clone();
+    if let Some(comp_label) = &companion {
+        if let Some(wv) = app.get_webview(comp_label) {
             let _ = wv.hide();
         }
     }
@@ -771,18 +980,16 @@ async fn open_link_popup(
     Ok(())
 }
 
-/// Close the link popup and bring the active service back.
+/// Close the link popup and bring the service layout back
+/// (single mode or both split panes, via the layout pass).
 #[tauri::command]
 fn close_link_popup(app: tauri::AppHandle, state: State<'_, AppState>) {
     *state.link_open.lock().unwrap() = false;
     if let Some(wv) = app.get_webview(POPUP_LABEL) {
         let _ = wv.close();
     }
-    let active = state.active.lock().unwrap().clone();
-    if let Some(active_label) = &active {
-        if let Some(wv) = app.get_webview(active_label) {
-            let _ = wv.show();
-        }
+    if let Some(window) = state.main_window.lock().unwrap().clone() {
+        layout_services(&app, &state, &window);
     }
 }
 
@@ -841,6 +1048,14 @@ fn close_service(app: tauri::AppHandle, state: State<'_, AppState>, id: String) 
         *active = None;
     }
     drop(active);
+    // A destroyed webview cannot stay the split companion; the
+    // UI keeps its own stored choice and re-creates it on the
+    // next split entry if it still wants this service there.
+    let mut comp = state.companion.lock().unwrap();
+    if comp.as_deref() == Some(label.as_str()) {
+        *comp = None;
+    }
+    drop(comp);
     // Delete the profile folder too: it holds cookies and session
     // tokens that must not outlive the service. WebView2 can keep
     // the files locked briefly after the webview closes, so a
@@ -877,6 +1092,13 @@ fn close_webview(app: tauri::AppHandle, state: State<'_, AppState>, id: String) 
     let mut active = state.active.lock().unwrap();
     if active.as_deref() == Some(label.as_str()) {
         *active = None;
+    }
+    drop(active);
+    // Same companion cleanup as close_service: a destroyed
+    // webview cannot stay the split companion.
+    let mut comp = state.companion.lock().unwrap();
+    if comp.as_deref() == Some(label.as_str()) {
+        *comp = None;
     }
 }
 
@@ -943,6 +1165,207 @@ fn set_service_media(state: State<'_, AppState>, id: String, mode: String) {
         _ => "allow".to_string(),
     };
     state.media_policy.lock().unwrap().insert(id, mode);
+}
+
+/// Enter split view (v0.9.0): the active service becomes the
+/// main (left) pane at the given ratio; a chosen companion takes
+/// the right pane, otherwise the right side stays empty for the
+/// UI's companion picker. The layout pass enforces the gate, so
+/// entering while the gate fails simply changes nothing visible.
+#[tauri::command]
+fn split_enter(app: tauri::AppHandle, state: State<'_, AppState>, ratio: f64) {
+    *state.split_ratio.lock().unwrap() = ratio;
+    *state.split_mode.lock().unwrap() = true;
+    if let Some(window) = state.main_window.lock().unwrap().clone() {
+        layout_services(&app, &state, &window);
+    }
+}
+
+/// Leave split view: the companion is parked by the layout pass
+/// (never closed — leaving split must not kill anything), and
+/// the main pane takes the full content area again.
+#[tauri::command]
+fn split_exit(app: tauri::AppHandle, state: State<'_, AppState>) {
+    *state.split_mode.lock().unwrap() = false;
+    if let Some(window) = state.main_window.lock().unwrap().clone() {
+        layout_services(&app, &state, &window);
+    }
+}
+
+/// Choose (or clear, with None) the split companion. Creating the
+/// companion's webview follows the same rules as a switch —
+/// own profile folder, own zoom, permission handlers — except
+/// eviction: while split is on the two panes are protected (see
+/// split_protected_labels), so creating the companion may exceed
+/// the "Hidup bareng" limit as a special case. Async for the
+/// same WebView2 reason as switch_service.
+#[tauri::command]
+async fn split_set_companion(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: Option<String>,
+    url: Option<String>,
+) -> Result<(), String> {
+    let window = state
+        .main_window
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("main window missing")?;
+    if let (Some(id), Some(url)) = (id, url) {
+        if !valid_id(&id) {
+            return Err("invalid service id".into());
+        }
+        if !valid_url(&url) {
+            return Err("invalid service url".into());
+        }
+        let label = label_for(&id);
+        if app.get_webview(&label).is_none() {
+            create_service_webview(&app, &state, &window, &id, &url)?;
+            if let Some(wv) = app.get_webview(&label) {
+                let z = state.zoom.lock().unwrap().get(&id).copied().unwrap_or(1.0);
+                let _ = wv.set_zoom(z);
+            }
+        }
+        *state.companion.lock().unwrap() = Some(label.clone());
+        let mut mru = state.alive_mru.lock().unwrap();
+        mru.retain(|l| l != &label);
+        mru.insert(0, label);
+    } else {
+        *state.companion.lock().unwrap() = None;
+    }
+    layout_services(&app, &state, &window);
+    Ok(())
+}
+
+/// Swap the two split panes: the companion becomes the main
+/// service (Rust's active) and the main becomes the companion.
+/// Both webviews already exist, so this is a pure relayout.
+#[tauri::command]
+fn split_swap(app: tauri::AppHandle, state: State<'_, AppState>) {
+    let active = state.active.lock().unwrap().clone();
+    let companion = state.companion.lock().unwrap().clone();
+    if let (Some(a), Some(c)) = (active, companion) {
+        *state.active.lock().unwrap() = Some(c);
+        *state.companion.lock().unwrap() = Some(a);
+    }
+    if let Some(window) = state.main_window.lock().unwrap().clone() {
+        layout_services(&app, &state, &window);
+    }
+}
+
+/// Set the split ratio (divider keyboard control, double-click
+/// reset). The stored value is the requested ratio; the layout
+/// pass clamps it against the current content width.
+#[tauri::command]
+fn split_set_ratio(app: tauri::AppHandle, state: State<'_, AppState>, ratio: f64) {
+    *state.split_ratio.lock().unwrap() = ratio.clamp(0.05, 0.95);
+    if let Some(window) = state.main_window.lock().unwrap().clone() {
+        layout_services(&app, &state, &window);
+    }
+}
+
+/// Whether the split double gate currently passes, recomputed
+/// fresh (the UI also receives "split-gate" events on changes).
+#[tauri::command]
+fn split_gate(state: State<'_, AppState>) -> bool {
+    match state.main_window.lock().unwrap().clone() {
+        Some(w) => compute_split_gate(&w),
+        None => false,
+    }
+}
+
+/// Whether the left mouse button is currently down, asked of
+/// Windows directly. The divider drag session polls this because
+/// Sodium's own UI cannot be trusted to see the release: during
+/// the drag the cursor spends most of its time over the native
+/// service webviews, which swallow the pointer events.
+#[cfg(target_os = "windows")]
+fn left_button_down() -> bool {
+    extern "system" {
+        fn GetAsyncKeyState(v_key: i32) -> i16;
+    }
+    const VK_LBUTTON: i32 = 0x01;
+    (unsafe { GetAsyncKeyState(VK_LBUTTON) } as u16 & 0x8000) != 0
+}
+
+#[cfg(not(target_os = "windows"))]
+fn left_button_down() -> bool {
+    true
+}
+
+/// Begin a split-divider drag session. A background thread polls
+/// the global cursor position (Window::cursor_position) roughly
+/// every frame, turns it into a split ratio, stores it, relays
+/// out (throttled by the poll rate itself) and reports it to the
+/// UI as "split-ratio" so the divider strip and its
+/// aria-valuenow follow. The session ends when the left button
+/// comes up — wherever the cursor is by then — and the final
+/// ratio goes out as "split-drag-end" for the UI to persist. A
+/// naive pointer-capture drag in the UI would break the moment
+/// the cursor crossed a native webview, which is most of the
+/// drag. The 120 s cap is a safety net for a session whose
+/// window vanished mid-drag.
+#[tauri::command]
+fn split_drag_start(app: tauri::AppHandle, state: State<'_, AppState>) {
+    if state
+        .split_dragging
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        return;
+    }
+    std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(16));
+            let state = app.state::<AppState>();
+            let stop = !state.split_dragging.load(std::sync::atomic::Ordering::SeqCst)
+                || !left_button_down()
+                || !*state.split_mode.lock().unwrap()
+                || std::time::Instant::now() > deadline;
+            if stop {
+                state
+                    .split_dragging
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                let ratio = *state.split_ratio.lock().unwrap();
+                let _ = app.emit_to(UI_LABEL, "split-drag-end", ratio);
+                return;
+            }
+            let window = match state.main_window.lock().unwrap().clone() {
+                Some(w) => w,
+                None => continue,
+            };
+            let Ok(pos) = window.cursor_position() else {
+                continue;
+            };
+            let scale = window.scale_factor().unwrap_or(1.0);
+            if scale <= 0.0 {
+                continue;
+            }
+            let size = logical_inner_size(&window);
+            let content_w = size.width - SIDEBAR_W;
+            if content_w <= DIVIDER_W + 2.0 {
+                continue;
+            }
+            // cursor_position is relative to the window's client
+            // area, in physical pixels: to logical content
+            // coordinates, then to a (clamped) ratio.
+            let x = pos.x / scale - SIDEBAR_W;
+            let ratio = clamp_split_ratio(x / (content_w - DIVIDER_W), content_w);
+            let changed = {
+                let mut r = state.split_ratio.lock().unwrap();
+                let changed = (*r - ratio).abs() > 0.0005;
+                if changed {
+                    *r = ratio;
+                }
+                changed
+            };
+            if changed {
+                layout_services(&app, &state, &window);
+                let _ = app.emit_to(UI_LABEL, "split-ratio", ratio);
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -1067,6 +1490,7 @@ pub fn run() {
         )
         .manage(AppState {
             max_alive: Mutex::new(1),
+            split_ratio: Mutex::new(0.5),
             zoom: Mutex::new(HashMap::new()),
             adblock_script: Mutex::new(BUNDLED_YT_ADBLOCK.to_string()),
             adblock_enabled: Mutex::new(true),
@@ -1097,6 +1521,9 @@ pub fn run() {
             }
             let size = window.inner_size()?;
             let state = app.state::<AppState>();
+            // The split gate's initial value, so the very first
+            // layout decisions and the UI's first query agree.
+            *state.gate_ok.lock().unwrap() = compute_split_gate(&window);
             // The UI webview gets the download handler too (source
             // "sodium-update") so update installers download inside
             // Sodium instead of opening the system browser.
@@ -1136,6 +1563,13 @@ pub fn run() {
             set_service_zoom,
             set_service_notif,
             set_service_media,
+            split_enter,
+            split_exit,
+            split_set_companion,
+            split_swap,
+            split_set_ratio,
+            split_drag_start,
+            split_gate,
             open_link_popup,
             close_link_popup,
             open_external,
@@ -1191,27 +1625,29 @@ pub fn run() {
             if let WindowEvent::Resized(_) = event {
                 let app = window.app_handle();
                 let (ui_pos, ui_size) = full_bounds(window);
-                let (pos, size) = service_bounds(window);
-                let active = app.state::<AppState>().active.lock().unwrap().clone();
-                for wv in app.webviews().values() {
-                    if wv.label() == UI_LABEL {
-                        let _ = wv.set_position(ui_pos);
-                        let _ = wv.set_size(ui_size);
-                    } else if wv.label() == POPUP_LABEL {
-                        let (ppos, psize) = popup_bounds(window);
-                        let _ = wv.set_position(ppos);
-                        let _ = wv.set_size(psize);
-                    } else if wv.label().starts_with("service-") {
-                        // Only the active service follows the bounds.
-                        // Parked webviews keep their off-screen
-                        // position; just track the new size so they
-                        // are already correct when activated.
-                        if active.as_deref() == Some(wv.label()) {
-                            let _ = wv.set_position(pos);
-                        }
-                        let _ = wv.set_size(size);
-                    }
+                if let Some(wv) = app.get_webview(UI_LABEL) {
+                    let _ = wv.set_position(ui_pos);
+                    let _ = wv.set_size(ui_size);
                 }
+                if let Some(wv) = app.get_webview(POPUP_LABEL) {
+                    let (ppos, psize) = popup_bounds(window);
+                    let _ = wv.set_position(ppos);
+                    let _ = wv.set_size(psize);
+                }
+                // Service webviews follow the one layout pass:
+                // the active service (and a split companion) get
+                // their new bounds, parked ones just track the
+                // new full size so they are already correct when
+                // activated.
+                let state = app.state::<AppState>();
+                layout_services(&app, &state, window);
+                schedule_gate_check(&app);
+            }
+            // Moving between monitors, or a display scale change,
+            // can flip the split gate either way; recheck it
+            // (debounced inside schedule_gate_check).
+            if let WindowEvent::Moved(_) | WindowEvent::ScaleChanged { .. } = event {
+                schedule_gate_check(&window.app_handle());
             }
         })
         .build(tauri::generate_context!())
