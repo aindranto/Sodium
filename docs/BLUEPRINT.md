@@ -197,3 +197,39 @@ Angka layanan aktif per halaman adalah sifat web app-nya sendiri (WhatsApp Web d
   160–180ms) lewat keadaan `.closing` sebelum panel disembunyikan;
   pop badge unread memakai transition transform (bisa retarget
   saat angka berubah beruntun), bukan keyframe lagi.
+
+## 12. Catatan v0.8.7 (28 Nov 2026)
+
+Perbaikan bug sesi login terhapus — penyebab asli WhatsApp
+keluar-keluar yang ditemukan Agung sendiri: setelah sebuah layanan
+di-NONAKTIF-kan beberapa menit lalu diaktifkan lagi, WhatsApp
+langsung meminta scan QR, seolah sesinya tidak pernah tersimpan.
+
+- Akar masalahnya satu nama command yang tertukar di `ui/main.js`.
+  Tiga jalur UI memanggil `close_service` — command Rust yang
+  menutup webview DAN menghapus folder profil layanan
+  (`remove_dir_all` + retry latar) — padahal ketiganya wajib
+  mempertahankan profil. Command yang benar adalah `close_webview`
+  (menutup webview, profil tetap), yang memang dibuat untuk itu dan
+  sudah dipakai dengan benar oleh jalur impor config.
+- Tiga titik yang diperbaiki (semua kini `close_webview`):
+  1. `setServiceDisabled` — menonaktifkan layanan tidak lagi
+     menghapus profil; mengaktifkan lagi tidak pernah meminta
+     login ulang (komentar di atas fungsi ini sejak awal memang
+     menjanjikan itu — sekarang kodenya menepati janjinya).
+  2. `deleteService` — menghapus layanan dari daftar tetap
+     menyisakan folder profil di disk, jadi menambah lagi layanan
+     yang sama memulihkan login, sesuai janji komentarnya.
+  3. Simpan dialog edit saat URL berubah — mengganti URL tidak
+     lagi membuang sesi login.
+- Command Rust `close_service` sekarang tidak dipakai UI sama
+  sekali; ia dibiarkan terdaftar di `lib.rs` (tidak ada perubahan
+  Rust di rilis ini) untuk berjaga-jaga bila suatu saat memang
+  perlu penghapusan profil secara eksplisit.
+- Catatan riwayat: bug inilah penjelasan utama saga logout
+  WhatsApp sejak 25 Nov — termasuk WA yang di-pin ikut keluar dan
+  yang "sudah keluar sejak pertama dibuka" (profilnya sudah
+  terhapus pada sesi sebelumnya). Diagnosis parkir off-screen
+  (v0.8.2) dan hard-kill saat shutdown (v0.8.3) ternyata BUKAN
+  penyebab utamanya; keduanya tetap perbaikan yang sah, tapi obat
+  sebenarnya adalah rilis ini.

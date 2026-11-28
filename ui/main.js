@@ -768,14 +768,17 @@ function togglePin(s) {
 
 // Disable = destroy the webview completely (RAM freed, nothing runs),
 // but keep the profile folder: cookies/session survive on disk, so
-// re-enabling never asks for a new login.
+// re-enabling never asks for a new login. That is why this uses
+// close_webview, NOT close_service — close_service deletes the profile
+// folder (the v0.8.7 bug: disabling WhatsApp wiped its login, so it
+// asked for a QR scan again on re-enable).
 async function setServiceDisabled(s, off) {
   const id = s.id;
   if (!off) {
     disabled.delete(id);
   } else {
     disabled.add(id);
-    await invoke("close_service", { id });
+    await invoke("close_webview", { id });
     if (activeId === id) {
       activeId = null;
       if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive"); scheduleConfigSave();
@@ -807,6 +810,8 @@ function duplicateService(srcSvc) {
 
 // Delete removes the service from the list; its profile folder stays
 // on disk either way, so re-adding it later restores the login.
+// (close_webview, not close_service: the latter deletes the profile —
+// see the v0.8.7 note in setServiceDisabled.)
 async function deleteService(id) {
   services = services.filter(x => x.id !== id);
   store.save(services);
@@ -818,7 +823,7 @@ async function deleteService(id) {
     el("welcome").style.display = "";
   }
   if (localStorage.getItem("sodium.lastActive") === id) localStorage.removeItem("sodium.lastActive"); scheduleConfigSave();
-  await invoke("close_service", { id });
+  await invoke("close_webview", { id });
   render();
 }
 
@@ -1131,7 +1136,9 @@ el("editSave").addEventListener("click", async () => {
   if (urlChanged) {
     s.url = url;
     store.save(services);
-    await invoke("close_service", { id: s.id });
+    // close_webview, not close_service: a URL edit must not throw away
+    // the saved login (close_service deletes the profile folder).
+    await invoke("close_webview", { id: s.id });
     if (!s.brand && s.favicon) {
       delete s.img;
       delete s.favicon;
