@@ -14,6 +14,12 @@
 // numbers and selectors in them are ours, never the page's.
 //
 // Reports (JSON, versioned):
+//   { v: 1, t: "hello" }   (v0.10.1 liveness: posted the
+//     moment this script starts and again on DOMContentLoaded;
+//     Rust counts ANY raw message as bridge contact, and the
+//     hello is the script's own proof of life — it lets the
+//     media panel distinguish "script never ran" from
+//     "handler never registered")
 //   { v: 1, t: "media", status: "playing"|"paused"|"none",
 //     title: "...", artist: "...", pip: false }
 //   { v: 1, t: "notif", title: "...", body: "..." }
@@ -58,6 +64,15 @@
     s = s == null ? "" : String(s);
     return s.length > n ? s.slice(0, n) : s;
   }
+
+  // Liveness hello (v0.10.1): posted immediately — if the
+  // host object is not up yet at document start, post()
+  // drops this silently and the DOMContentLoaded hello
+  // below (plus the first media report) still lands.
+  function hello() {
+    post({ v: 1, t: "hello" });
+  }
+  hello();
 
   // ------------------------------------------------------------
   // Media tracking
@@ -160,6 +175,7 @@
   try {
     scanTree(document.documentElement);
     document.addEventListener("DOMContentLoaded", function () {
+      hello();
       scanTree(document.documentElement);
       scheduleReport();
     });

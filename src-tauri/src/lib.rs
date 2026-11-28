@@ -79,6 +79,28 @@ struct AppState {
     /// no UI reads this yet and nothing persists it. Capped in
     /// handle_bridge_message.
     page_notifications: Mutex<Vec<PageNotification>>,
+    /// Bridge liveness per service id (v0.10.1): how many RAW
+    /// WebMessageReceived callbacks the service's webview has
+    /// produced, and when the last one arrived. The counter is
+    /// bumped at the very top of the handler closure, before
+    /// the message is extracted or parsed — it measures
+    /// CONTACT, so a bridge whose script sends garbage still
+    /// counts as alive, while a handler that never fires (or
+    /// a script that never runs) stays visibly at zero. Read
+    /// back through media_states; drives the diagnosis line
+    /// in the media panel.
+    bridge_contacts: Mutex<HashMap<String, BridgeContact>>,
+    /// Labels of service webviews whose bridge handler is
+    /// ACTUALLY registered (v0.10.1). attach_media_bridge
+    /// marks a label only when add_WebMessageReceived returns
+    /// Ok — every failure on that path is otherwise silent.
+    /// switch_service and split_set_companion consult this
+    /// set and re-attach when a live webview is missing from
+    /// it, so a failed registration at creation time is
+    /// retried instead of permanent. Cleared in
+    /// clear_media_state, with the rest of the per-webview
+    /// bridge state.
+    bridge_attached: Mutex<HashSet<String>>,
     /// Generation counter debouncing the media-protection
     /// eviction recheck, same pattern as gate_gen: a pause only
     /// schedules a check, and only the newest scheduled check
@@ -182,6 +204,17 @@ struct MediaInfo {
     pip: bool,
 }
 
+/// Raw bridge contact for one service (v0.10.1): how many
+/// WebMessageReceived callbacks its webview has produced and
+/// when the last one arrived (Sodium's own clock — the
+/// page's is not trusted). Counts contact, not validity:
+/// see bridge_contacts in AppState.
+#[derive(Clone, Default)]
+struct BridgeContact {
+    count: u64,
+    last_ms: u64,
+}
+
 /// MediaInfo plus its service id: the shape the UI consumes,
 /// both as the "media-changed" event payload and as the
 /// media_states snapshot entries.
@@ -192,15 +225,21 @@ struct MediaStateEntry {
     artist: String,
     status: String,
     pip: bool,
+    /// Bridge liveness (v0.10.1): this service's page has
+    /// made raw bridge contact at least once. Lets the media
+    /// panel distinguish "nothing is playing" from "the
+    /// bridge never connected".
+    bridge: bool,
 }
 
-fn media_entry(id: &str, info: &MediaInfo) -> MediaStateEntry {
+fn media_entry(id: &str, info: &MediaInfo, bridge: bool) -> MediaStateEntry {
     MediaStateEntry {
         id: id.to_string(),
         title: info.title.clone(),
         artist: info.artist.clone(),
         status: info.status.clone(),
         pip: info.pip,
+        bridge,
     }
 }
 
@@ -728,26 +767,37 @@ fn create_service_webview(
             _ => PermissionResponse::Default,
         });
     // Media bridge (v0.10.0): every service page gets the shared
-    // bridge script as an initialization script (main frame),
-    // independent of the YouTube adblock below. It reports media
-    // state and page notifications back over WebView2 WebMessage;
-    // the receiving end is attached right after the webview is
-    // created (see attach_media_bridge).
-    builder = builder.initialization_script(BRIDGE_SCRIPT);
-    // YouTube adblock: YouTube services get the adblock script as an
-    // initialization script (it runs before the page's own scripts).
-    // Webviews that are already alive are not touched — the script
-    // applies from the next time the service is created.
+    // bridge script as an initialization script (main frame). It
+    // reports media state and page notifications back over
+    // WebView2 WebMessage; the receiving end is attached right
+    // after the webview is created (see attach_media_bridge).
+    //
+    // YouTube services with the adblock on get the adblock
+    // script too — CONCATENATED behind the bridge script in
+    // ONE initialization_script call (v0.10.1). v0.10.0 made
+    // two separate calls, and Agung's YouTube test detected no
+    // media at all: if repeated calls replace rather than
+    // append in the locked Tauri/wry version, the second call
+    // silently wiped the bridge script on exactly the services
+    // that also run the adblock. One call removes the question
+    // whatever the semantics are. Bridge first, adblock after,
+    // separated by a newline and a stray semicolon so the two
+    // files can never fuse into one statement. Webviews that
+    // are already alive are not touched — the scripts apply
+    // from the next time the service is created.
+    let mut init_script = String::from(BRIDGE_SCRIPT);
     if *state.adblock_enabled.lock().unwrap() {
         if let Some(host) = parsed.host_str() {
             if is_youtube_host(host) {
                 let script = state.adblock_script.lock().unwrap().clone();
                 if !script.is_empty() {
-                    builder = builder.initialization_script(script);
+                    init_script.push_str("\n;\n");
+                    init_script.push_str(&script);
                 }
             }
         }
     }
+    builder = builder.initialization_script(init_script);
     let (pos, size) = service_bounds(window);
     let wv = window
         .add_child(builder, pos, size)
@@ -776,6 +826,16 @@ fn create_service_webview(
 /// Security: a page message is untrusted input. It can only
 /// ever be DATA for handle_bridge_message — no message shape
 /// reaches a command, a shell, or an eval.
+///
+/// v0.10.1 hardening: v0.10.0 swallowed every failure on this
+/// path (the with_webview result, a CoreWebView2 error, the
+/// registration result), so a dead registration was silent
+/// and permanent — one of the two suspects for Agung's
+/// "no media detected at all" test. Now the handler counts
+/// RAW contact before anything else, and the label is marked
+/// in bridge_attached only when registration returns Ok, so
+/// the show paths can re-attach (ensure_bridge_attached)
+/// instead of leaving the bridge dead.
 #[cfg(target_os = "windows")]
 fn attach_media_bridge(app: &tauri::AppHandle, wv: &tauri::Webview, id: &str) {
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2;
@@ -790,7 +850,21 @@ fn attach_media_bridge(app: &tauri::AppHandle, wv: &tauri::Webview, id: &str) {
             Ok(c) => c,
             Err(_) => return,
         };
+        let label = label_for(&id);
+        let handler_app = app.clone();
+        let handler_id = id.clone();
         let handler = WebMessageReceivedEventHandler::create(Box::new(move |_sender, args| {
+            // Liveness before everything (v0.10.1): count the
+            // RAW callback — before the message is extracted,
+            // let alone parsed. The count measures whether the
+            // channel itself is alive.
+            {
+                let state = handler_app.state::<AppState>();
+                let mut contacts = state.bridge_contacts.lock().unwrap();
+                let contact = contacts.entry(handler_id.clone()).or_default();
+                contact.count += 1;
+                contact.last_ms = unix_ms();
+            }
             let Some(args) = args else {
                 return Ok(());
             };
@@ -802,11 +876,14 @@ fn attach_media_bridge(app: &tauri::AppHandle, wv: &tauri::Webview, id: &str) {
                 return Ok(());
             }
             let text = take_pwstr(raw);
-            handle_bridge_message(&app, &id, &text);
+            handle_bridge_message(&handler_app, &handler_id, &text);
             Ok(())
         }));
         let mut token = Default::default();
-        let _ = unsafe { core.add_WebMessageReceived(&handler, &mut token) };
+        if unsafe { core.add_WebMessageReceived(&handler, &mut token) }.is_ok() {
+            let state = app.state::<AppState>();
+            state.bridge_attached.lock().unwrap().insert(label);
+        }
     });
 }
 
@@ -814,6 +891,23 @@ fn attach_media_bridge(app: &tauri::AppHandle, wv: &tauri::Webview, id: &str) {
 /// simply absent and media features stay dark.
 #[cfg(not(target_os = "windows"))]
 fn attach_media_bridge(_app: &tauri::AppHandle, _wv: &tauri::Webview, _id: &str) {}
+
+/// Re-attach insurance (v0.10.1): paths that SHOW a service
+/// call this so a live webview whose handler registration
+/// failed silently at creation time gets a second chance,
+/// instead of a bridge that stays dead for the webview's
+/// whole life. bridge_attached is the guard against double
+/// registration: a label already in the set is never
+/// attached twice.
+fn ensure_bridge_attached(app: &tauri::AppHandle, state: &AppState, id: &str) {
+    let label = label_for(id);
+    if state.bridge_attached.lock().unwrap().contains(&label) {
+        return;
+    }
+    if let Some(wv) = app.get_webview(&label) {
+        attach_media_bridge(app, &wv, id);
+    }
+}
 
 /// One bounded string field out of a bridge message: anything
 /// that is not a string is empty, anything longer is cut.
@@ -826,10 +920,11 @@ fn bridge_str(v: &serde_json::Value, key: &str, max: usize) -> String {
 
 /// Handle one raw bridge message from one service's page. The
 /// page is untrusted: the payload is size-capped before
-/// parsing, the version and type must match the two known
-/// report shapes, every field is type-checked and clamped,
-/// and the status is an enum, never free text. Anything else
-/// is dropped silently.
+/// parsing, the version and type must match the known
+/// report shapes ("media", "notif", and the v0.10.1
+/// liveness "hello"), every field is type-checked and
+/// clamped, and the status is an enum, never free text.
+/// Anything else is dropped silently.
 fn handle_bridge_message(app: &tauri::AppHandle, id: &str, text: &str) {
     if text.len() > 8192 {
         return;
@@ -866,7 +961,7 @@ fn handle_bridge_message(app: &tauri::AppHandle, id: &str, text: &str) {
                 changed
             };
             if changed {
-                let _ = app.emit_to(UI_LABEL, "media-changed", media_entry(id, &info));
+                let _ = app.emit_to(UI_LABEL, "media-changed", media_entry(id, &info, true));
             }
             // A service that stopped playing keeps its eviction
             // protection for a grace period; schedule the
@@ -891,6 +986,29 @@ fn handle_bridge_message(app: &tauri::AppHandle, id: &str, text: &str) {
                 let excess = list.len() - 200;
                 list.drain(..excess);
             }
+        }
+        Some("hello") => {
+            // Liveness hello (v0.10.1): the bridge script is
+            // alive in this page — it posts one at script
+            // start and one on DOMContentLoaded. The raw
+            // contact was already counted in the handler
+            // closure; media_state does NOT change here. The
+            // current entry is re-emitted so an open media
+            // panel flips this service's diagnosis line to
+            // "terhubung" without waiting for a media change.
+            let info = state
+                .media_state
+                .lock()
+                .unwrap()
+                .get(id)
+                .cloned()
+                .unwrap_or(MediaInfo {
+                    title: String::new(),
+                    artist: String::new(),
+                    status: "none".to_string(),
+                    pip: false,
+                });
+            let _ = app.emit_to(UI_LABEL, "media-changed", media_entry(id, &info, true));
         }
         _ => {}
     }
@@ -939,32 +1057,55 @@ fn schedule_media_evict_check(app: &tauri::AppHandle) {
 /// now-playing row would be a ghost) and tell the UI, mirroring
 /// how eviction clears the unread badge.
 fn clear_media_state(app: &tauri::AppHandle, state: &AppState, id: &str) {
+    // The webview is gone, so its bridge registration mark
+    // and contact record go with it (v0.10.1): the media
+    // panel's diagnosis must never call a dead webview
+    // connected, and a re-created webview starts from a
+    // clean slate (its fresh attach marks the label again).
+    state.bridge_attached.lock().unwrap().remove(&label_for(id));
+    let had_contact = state.bridge_contacts.lock().unwrap().remove(id).is_some();
     let removed = state.media_state.lock().unwrap().remove(id);
-    if let Some(old) = removed {
-        if old.status != "none" || old.pip {
-            let none = MediaInfo {
-                title: String::new(),
-                artist: String::new(),
-                status: "none".to_string(),
-                pip: false,
-            };
-            let _ = app.emit_to(UI_LABEL, "media-changed", media_entry(id, &none));
-        }
+    let had_media = matches!(&removed, Some(old) if old.status != "none" || old.pip);
+    if had_media || had_contact {
+        let none = MediaInfo {
+            title: String::new(),
+            artist: String::new(),
+            status: "none".to_string(),
+            pip: false,
+        };
+        let _ = app.emit_to(UI_LABEL, "media-changed", media_entry(id, &none, false));
     }
 }
 
 /// Snapshot of every service's media state, for the media
 /// panel when it opens (changes after that arrive as
-/// "media-changed" events).
+/// "media-changed" events). Since v0.10.1 the snapshot also
+/// covers services that have bridge CONTACT but no media
+/// state: they ride along with a "none" shape purely so the
+/// entry can carry `bridge: true` for the panel's diagnosis
+/// (the UI drops "none" entries from its media rows as
+/// before and keeps only the flag).
 #[tauri::command]
 fn media_states(state: State<'_, AppState>) -> Vec<MediaStateEntry> {
-    state
-        .media_state
-        .lock()
-        .unwrap()
+    let contacts = state.bridge_contacts.lock().unwrap();
+    let media = state.media_state.lock().unwrap();
+    let mut out: Vec<MediaStateEntry> = media
         .iter()
-        .map(|(id, info)| media_entry(id, info))
-        .collect()
+        .map(|(id, info)| media_entry(id, info, contacts.contains_key(id.as_str())))
+        .collect();
+    for id in contacts.keys() {
+        if !media.contains_key(id) {
+            out.push(MediaStateEntry {
+                id: id.clone(),
+                title: String::new(),
+                artist: String::new(),
+                status: "none".to_string(),
+                pip: false,
+                bridge: true,
+            });
+        }
+    }
+    out
 }
 
 /// Drive one service's media (v0.10.0) by evaluating the bridge
@@ -1153,6 +1294,11 @@ async fn switch_service(
         let z = state.zoom.lock().unwrap().get(&id).copied().unwrap_or(1.0);
         let _ = wv.set_zoom(z);
     }
+
+    // Bridge attach insurance (v0.10.1): if this webview's
+    // handler registration failed silently at creation time,
+    // retry it now instead of leaving the bridge dead.
+    ensure_bridge_attached(&app, &state, &id);
 
     // Native webviews stack with the newest on top, so only the
     // target may sit in the service area; the layout pass puts it
@@ -1591,6 +1737,10 @@ async fn split_set_companion(
                 let _ = wv.set_zoom(z);
             }
         }
+        // Same bridge attach insurance as switch_service
+        // (v0.10.1): a companion webview that already existed
+        // gets a registration retry if its first one failed.
+        ensure_bridge_attached(&app, &state, &id);
         *state.companion.lock().unwrap() = Some(label.clone());
         let mut mru = state.alive_mru.lock().unwrap();
         mru.retain(|l| l != &label);

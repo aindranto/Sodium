@@ -546,3 +546,85 @@ terpisah darinya), selalu aktif:
 - Bukti akhir jembatan (pesan halaman tampil di UI) baru
   terverifikasi setelah Agung mengetes rilis ini di
   perangkatnya.
+
+## 17. Catatan v0.10.1 (28 Nov 2026) — diagnosis & pengerasan jembatan
+
+### Gejala dari tes Agung
+
+v0.10.0 dites Agung: video YouTube sedang diputar, panel
+media tetap menampilkan "Tidak ada media yang diputar" —
+tidak ada media terdeteksi sama sekali. Bedah kode
+sesudahnya: skrip jembatan, parser Rust, dan UI semuanya
+benar di atas kertas. Berarti putusnya di salah satu dari
+dua mata rantai yang kegagalannya DIAM-DIAM:
+
+- (A) Registrasi handler `attach_media_bridge`: semua
+  error ditelan (`let _ =` pada `with_webview` dan
+  `add_WebMessageReceived`; `CoreWebView2()` Err → return
+  tanpa jejak). Bila closure tak jalan atau registrasi
+  gagal, jembatan mati permanen untuk webview itu tanpa
+  satu pun petunjuk.
+- (B) Interaksi inisialisasi di YouTube: builder memanggil
+  `.initialization_script()` dua kali — skrip jembatan,
+  lalu adblock. Bila pada versi terkunci panggilan kedua
+  MENIMPA yang pertama (bukan append), skrip jembatan
+  tidak pernah jalan justru di YouTube, tempat Agung
+  mengetes.
+
+### Tiga pengerasan
+
+1. **Liveness jembatan per layanan.** Rust kini menghitung
+   KONTAK MENTAH: di dalam closure handler
+   WebMessageReceived, penghitung (state `bridge_contacts`:
+   jumlah pesan mentah + waktu terakhir, per layanan)
+   dinaikkan SEBELUM pesan diekstrak atau diparse — yang
+   diukur adalah kontaknya, bukan cuma pesan valid. Skrip
+   mengirim laporan `{v:1,t:"hello"}` segera saat mulai
+   dan pada DOMContentLoaded; parser menerimanya cukup
+   sebagai kontak (media_state tidak berubah, tapi entri
+   semasa dipancarkan ulang agar panel yang sedang terbuka
+   memperbarui diagnosisnya). `media_states` kini
+   menyertakan semua layanan yang punya kontak jembatan
+   atau state media, dan tiap entri membawa `bridge: bool`
+   (kontak > 0).
+2. **Satu panggilan skrip inisialisasi.** Untuk layanan
+   YouTube dengan adblock aktif, skrip jembatan + adblock
+   digabung menjadi SATU string (jembatan dulu, adblock
+   sesudahnya, dipisah newline + `;`) dalam satu panggilan
+   `.initialization_script(...)`. Layanan non-YouTube
+   tetap jembatan saja. Risiko timpa-menimpa hilang apa
+   pun semantik append/replace di versi terkunci.
+3. **Pasang ulang handler (asuransi timing).** State
+   `bridge_attached` (set label) ditandai HANYA bila
+   `add_WebMessageReceived` mengembalikan Ok.
+   `switch_service` dan `split_set_companion` memanggil
+   `ensure_bridge_attached`: webview yang hidup tapi
+   labelnya belum tercatat dipasangi handler lagi (set-nya
+   mencegah registrasi ganda). Tanda dibersihkan di
+   `clear_media_state` — titik yang sama dengan
+   pembersihan state jembatan lain saat webview
+   dimusnahkan — bersama catatan kontaknya, supaya panel
+   tidak pernah menyebut webview mati "terhubung".
+
+### Cara membaca diagnosis di panel media
+
+Bila tidak ada baris media, panel menampilkan teks kosong
+seperti biasa DITAMBAH satu baris ringkas per layanan yang
+dikenal: "nama — jembatan terhubung" atau "nama — jembatan
+belum terhubung". Bila TIDAK ADA layanan dengan kontak
+sama sekali, teks utamanya menjadi "Jembatan media belum
+terhubung". Bacanya:
+
+- Semua layanan "belum terhubung" → masalah di sisi
+  registrasi handler (tersangka A) atau skrip tidak jalan
+  di mana pun.
+- YouTube "belum terhubung" tapi layanan lain "terhubung"
+  → masalah khusus YouTube (tersangka B, atau halamannya
+  menghalangi skrip).
+- "Terhubung" tapi media tetap tidak terdeteksi → rantai
+  jembatan hidup; yang putus adalah deteksi medianya di
+  halaman — bahan diagnosis langkah berikutnya.
+
+v0.10.1 tidak mengklaim jembatan sudah terbukti — buktinya
+tetap tes Agung setelah rilis. Yang berubah: putusnya
+(bila masih ada) kini TERLIHAT, bukan cuma diam.

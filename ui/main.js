@@ -2198,8 +2198,18 @@ el("reloadBtn").addEventListener("click", () => { invoke("reload_service").catch
 // control handle in the page — the action names are a
 // whitelist, nothing free-form is ever sent. A service whose
 // media ends (or whose webview dies) reports "none" and its
-// row disappears, mirroring how unread badges clear.
+// row disappears, mirroring how unread badges clear. Since
+// v0.10.1 every entry also carries bridge liveness (raw
+// contact, counted in Rust before parsing): with no rows,
+// the panel shows a per-service diagnosis instead of only
+// the empty text, so a dead bridge is visible, not silent.
 const mediaStates = new Map();
+// Bridge liveness per service (v0.10.1): true once the
+// service's page has made ANY raw bridge contact. Kept in
+// its own map because "none" media entries are dropped from
+// mediaStates — the flag must survive them. Drives the
+// diagnosis lines in the empty media panel.
+const mediaBridge = new Map();
 const MEDIA_STATUS_LABEL = { playing: "Sedang diputar", paused: "Jeda" };
 const MEDIA_ICON_PLAY = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5z"/></svg>';
 const MEDIA_ICON_PAUSE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><rect x="6.5" y="5" width="3.6" height="14" rx="1"/><rect x="13.9" y="5" width="3.6" height="14" rx="1"/></svg>';
@@ -2218,6 +2228,7 @@ function refreshMediaDot() {
 }
 function applyMediaEntry(entry) {
   if (!entry || !entry.id) return;
+  mediaBridge.set(entry.id, !!entry.bridge);
   if (entry.status === "none" && !entry.pip) mediaStates.delete(entry.id);
   else mediaStates.set(entry.id, entry);
   refreshMediaDot();
@@ -2239,8 +2250,21 @@ function renderMediaPanel() {
   if (!rows.length) {
     const d = document.createElement("div");
     d.className = "dlEmpty";
-    d.textContent = "Tidak ada media yang diputar";
+    // Diagnosis (v0.10.1): "no rows" has two very different
+    // causes — nothing is playing, or the bridge itself
+    // never connected (no known service has made contact at
+    // all). Say which one it is, then one compact line per
+    // service so a per-service failure (say, only YouTube)
+    // is visible at a glance.
+    const anyBridge = services.some((s) => mediaBridge.get(s.id));
+    d.textContent = anyBridge ? "Tidak ada media yang diputar" : "Jembatan media belum terhubung";
     list.appendChild(d);
+    for (const s of services) {
+      const line = document.createElement("div");
+      line.className = "mediaDiag";
+      line.textContent = s.name + " — " + (mediaBridge.get(s.id) ? "jembatan terhubung" : "jembatan belum terhubung");
+      list.appendChild(line);
+    }
     return;
   }
   for (const [s, m] of rows) {
