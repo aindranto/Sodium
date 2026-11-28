@@ -1,4 +1,4 @@
-// Sodium media bridge (v0.10.0) — injected into every service
+// Sodium media bridge (v0.10.2) — injected into every service
 // page as an initialization script (main frame), alongside but
 // separate from the YouTube adblock script. This is Jalur B
 // tahap 1: the page side of the page<->Sodium bridge.
@@ -27,7 +27,14 @@
 // page is untrusted input either way.
 //
 // What lives here:
-//  - HTML5 <video> tracking (initial scan + MutationObserver),
+//  - HTML5 <video> tracking. Since v0.10.2 the source of
+//    truth is a periodic fresh scan of the whole document
+//    (every 2 s) that pierces OPEN shadow roots — YouTube's
+//    player lives inside the `ytd-player` component's shadow
+//    tree, which plain querySelectorAll and a document-level
+//    MutationObserver can never see into. Per-element
+//    listeners, the observer, and capture-phase event
+//    delegation remain as fast triggers on top of the scan;
 //    Media Session metadata, play state, PiP state.
 //  - window.__sodiumMedia: the stable control handle Sodium's
 //    media commands eval (toggle / seekBy / next / prev).
@@ -101,13 +108,54 @@
     }
     videos.add(v);
   }
-  function scanTree(root) {
-    if (!root || root.nodeType !== 1) return;
-    if (root.tagName === "VIDEO") track(root);
-    if (root.querySelectorAll) {
-      var found = root.querySelectorAll("video");
-      for (var i = 0; i < found.length; i++) track(found[i]);
+  // Collect every <video> under a root (Document, Element, or
+  // ShadowRoot), recursing into every OPEN shadow root on the
+  // way. Plain querySelectorAll stops at shadow boundaries;
+  // YouTube's <video> sits inside the ytd-player component's
+  // shadow tree, so without this walk the player is invisible
+  // to us (the v0.10.0/v0.10.1 bug: bridge alive, detection
+  // dead). Closed shadow roots are unreachable by design and
+  // simply skipped. One hostile subtree must not stop the
+  // rest of the scan, hence the inner try/catch.
+  function collectFrom(root, out) {
+    if (!root) return;
+    try {
+      if (root.nodeType === 1 && root.tagName === "VIDEO") out.push(root);
+      if (!root.querySelectorAll) return;
+      var vids = root.querySelectorAll("video");
+      for (var i = 0; i < vids.length; i++) out.push(vids[i]);
+      var all = root.querySelectorAll("*");
+      for (var j = 0; j < all.length; j++) {
+        var sr = null;
+        try { sr = all[j].shadowRoot; } catch (e) { sr = null; }
+        if (sr) collectFrom(sr, out);
+      }
+    } catch (e) { /* keep scanning whatever else there is */ }
+  }
+  // Track everything collectFrom finds under one root
+  // (used by the observer for fast reaction to new nodes).
+  function scanInto(root) {
+    var found = [];
+    collectFrom(root, found);
+    for (var i = 0; i < found.length; i++) track(found[i]);
+  }
+  // A full fresh scan of the document, rebuilding the tracked
+  // set from what is actually in the page right now. This is
+  // the source of truth for detection (v0.10.2): it does not
+  // depend on the observer having seen an insertion, on
+  // listeners having been attached in time, or on elements
+  // staying put — whatever the page contains at scan time is
+  // what the next snapshot describes.
+  function freshScan() {
+    var found = [];
+    collectFrom(document, found);
+    var next = new Set();
+    for (var i = 0; i < found.length; i++) {
+      track(found[i]); // attaches listeners once (WeakSet-guarded)
+      next.add(found[i]);
     }
+    videos = next;
+    if (lastActive && !lastActive.isConnected) lastActive = null;
   }
   function prune() {
     videos.forEach(function (v) {
@@ -161,7 +209,15 @@
   }
   function report() {
     sendTimer = 0;
-    var snap = snapshot();
+    var snap;
+    try {
+      snap = snapshot();
+    } catch (e) {
+      // A snapshot that throws (a page API misbehaving at the
+      // wrong moment) degrades to a "none" report — it must
+      // never propagate into the polling interval and kill it.
+      snap = { v: 1, t: "media", status: "none", title: "", artist: "", pip: false };
+    }
     var key = snap.status + "|" + snap.title + "|" + snap.artist + "|" + (snap.pip ? "1" : "0");
     if (key === lastKey) return;
     lastKey = key;
@@ -172,26 +228,87 @@
     sendTimer = setTimeout(report, 200);
   }
 
+  // ------------------------------------------------------------
+  // Init — v0.10.2: every step lives in its OWN try/catch.
+  // The old code ran scan → listeners → observer → interval
+  // in ONE sequential try block, so a single throw in the
+  // middle (e.g. observe() on a documentElement that does not
+  // exist yet at document-created injection time) silently
+  // killed every step after it — including the 2 s interval,
+  // the one backstop that depends on no events at all.
+  // ------------------------------------------------------------
+  // One polling tick: fresh scan first (the source of truth),
+  // then report. Each half is guarded separately so a scan
+  // failure cannot suppress a report and vice versa.
+  function tick() {
+    try { freshScan(); } catch (e) { /* still try to report */ }
+    try { report(); } catch (e) { /* report() is guarded inside too */ }
+  }
+
+  // Step 1: initial scan (best-effort — at document-created
+  // time the DOM is usually still empty; later steps cover it).
   try {
-    scanTree(document.documentElement);
+    freshScan();
+    scheduleReport();
+  } catch (e) { /* polling below is the real backstop */ }
+
+  // Step 2: once the DOM is parsed, say hello again and scan
+  // with real content present.
+  try {
     document.addEventListener("DOMContentLoaded", function () {
       hello();
-      scanTree(document.documentElement);
+      try { freshScan(); } catch (e) { /* ignore */ }
       scheduleReport();
     });
+  } catch (e) { /* ignore */ }
+
+  // Step 3: capture-phase event delegation. play/pause/ended
+  // do not bubble, but a capture listener on the document
+  // still sees them on their way down — for ANY media element,
+  // including ones born after this script ran and ones inside
+  // shadow trees (events from open shadow trees are composed
+  // and retargeted, but they do pass through the document in
+  // the capture phase; the tracked element listeners and the
+  // polling scan cover the rest).
+  try {
+    var onMediaEvent = function (e) {
+      var t = e && e.target;
+      if (t && t.tagName === "VIDEO") {
+        track(t);
+        lastActive = t;
+        scheduleReport();
+      }
+    };
+    document.addEventListener("play", onMediaEvent, true);
+    document.addEventListener("pause", onMediaEvent, true);
+    document.addEventListener("ended", onMediaEvent, true);
+  } catch (e) { /* ignore */ }
+
+  // Step 4: MutationObserver as a fast trigger for newly
+  // inserted subtrees. Observing the document itself (not
+  // documentElement, which may not exist yet when this script
+  // is injected). The observer cannot see into shadow trees —
+  // that is fine, it is a trigger, not the source of truth.
+  try {
     var mo = new MutationObserver(function (muts) {
       for (var i = 0; i < muts.length; i++) {
         var added = muts[i].addedNodes;
-        for (var j = 0; j < added.length; j++) scanTree(added[j]);
+        for (var j = 0; j < added.length; j++) scanInto(added[j]);
       }
       scheduleReport();
     });
-    mo.observe(document.documentElement, { childList: true, subtree: true });
-    // Media Session metadata has no change event, and PiP can
-    // change without touching our elements: poll as a backstop.
-    // report() dedupes, so an idle page sends nothing.
-    setInterval(report, 2000);
-  } catch (e) { /* tracking is best-effort; controls still work */ }
+    mo.observe(document, { childList: true, subtree: true });
+  } catch (e) { /* polling below covers detection without it */ }
+
+  // Step 5: the polling backstop, in its own block so nothing
+  // above can ever prevent it from being installed. Media
+  // Session metadata has no change event and PiP can change
+  // without touching our elements, so we poll: fresh scan +
+  // report every 2 s. report() dedupes, so an idle page
+  // sends nothing.
+  try {
+    setInterval(tick, 2000);
+  } catch (e) { /* nothing left to fall back on; stay silent */ }
 
   // ------------------------------------------------------------
   // Control handle for Sodium's media commands. Sodium evals

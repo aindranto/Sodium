@@ -628,3 +628,82 @@ terhubung". Bacanya:
 v0.10.1 tidak mengklaim jembatan sudah terbukti — buktinya
 tetap tes Agung setelah rilis. Yang berubah: putusnya
 (bila masih ada) kini TERLIHAT, bukan cuma diam.
+
+## 18. Catatan v0.10.2 (28 Nov 2026) — deteksi media ditulis ulang
+
+### Bukti dari tes v0.10.1
+
+Screenshot panel media dari Agung: YouTube "jembatan
+terhubung" (dan Muse.AI 1 juga) — pesan hello sampai ke
+Rust, jadi skrip jalan, postMessage jalan, handler jalan.
+Layanan lain "belum terhubung" hanya karena belum dibuka
+sesi itu (belum ada webview) — normal, bukan bug. Tapi
+video YouTube yang sedang diputar tetap tidak pernah
+terdeteksi. Kesimpulan tegas: **pipa jembatan sehat; yang
+mati adalah mesin pelacak video di halaman.** Sesuai
+dugaan baris ketiga panduan diagnosis v0.10.1.
+
+### Dua tersangka, dua-duanya terkonfirmasi di kode
+
+Bedah `bridge/media.js` versi ter-push menemukan:
+
+1. **Satu try/catch berurutan untuk seluruh init.**
+   Scan awal → listener DOMContentLoaded → buat
+   MutationObserver → `mo.observe(...)` →
+   `setInterval(report, 2000)` berada dalam SATU blok try.
+   Satu lemparan di tengah (mis. `observe` pada
+   `documentElement` yang belum siap saat skrip disuntik
+   di document-created) membunuh SEMUA langkah sesudahnya
+   — termasuk interval 2 detik, satu-satunya penopang yang
+   tidak tergantung event.
+2. **Tidak ada penembusan shadow DOM sama sekali.**
+   `scanTree` hanya memakai `querySelectorAll("video")`
+   (berhenti di batas shadow root) dan observer hanya
+   mengawasi dokumen utama. Pemutar YouTube hidup di dalam
+   komponen `ytd-player`; elemen `<video>`-nya berada di
+   shadow tree komponen itu. Akibatnya video tidak pernah
+   masuk Set pelacakan, `pickActive()` selamanya kosong,
+   dan snapshot selamanya "none" — walau interval jalan
+   dan jembatan sehat. Ini tersangka terkuat: ia
+   menjelaskan gejala persis tanpa perlu asumsi kegagalan
+   init.
+
+### Perbaikan (semua di `bridge/media.js`; Rust & UI utuh)
+
+1. **Polling-pindai sebagai sumber kebenaran.** Interval
+   2 detik kini menjalankan `tick()`: pemindaian DOM segar
+   menyeluruh (`freshScan`) SEBELUM `report()`. Set video
+   dibangun ulang dari isi halaman saat itu juga — deteksi
+   tidak lagi bergantung pada observer/listener yang
+   sempat terpasang atau tidak.
+2. **Pindaian menembus shadow DOM.** `collectFrom(root,
+   out)` berjalan rekursif: tiap elemen yang punya
+   `shadowRoot` TERBUKA dipindai juga ke dalamnya (video +
+   subtree). Shadow root tertutup memang tidak bisa
+   ditembus dan dilewati. Video dari shadow tree
+   diperlakukan sama — listener play/pause ditempel
+   langsung ke elemennya tetap bekerja.
+3. **Isolasi kesalahan per langkah.** Init kini lima
+   langkah, masing-masing try/catch SENDIRI: scan awal,
+   listener DOMContentLoaded, delegasi event, observer,
+   dan interval — interval dipasang dalam bloknya sendiri
+   dan tidak bisa gagal karena langkah lain. `tick()`
+   menjaga scan dan report secara terpisah, dan
+   `report()` menangkap pengecualian `snapshot()` di
+   dalam (snapshot yang melempar terdegradasi jadi
+   laporan "none", bukan membunuh interval).
+4. **Delegasi event fase-capture.** Listener
+   `play`/`pause`/`ended` pada document dengan
+   `capture=true`: event media tidak bubble, tapi fase
+   capture di document tetap melihatnya — dari elemen
+   mana pun, termasuk yang lahir belakangan.
+
+Kontrak dengan Rust TIDAK berubah: format laporan dan
+hello v0.10.1 persis, dedupe sama, handle
+`window.__sodiumMedia`, tombol PiP, dan hook notifikasi
+dipertahankan apa adanya. Tidak ada satu baris pun Rust
+atau UI yang diubah di rilis ini.
+
+Seperti sebelumnya: v0.10.2 tidak mengklaim deteksi sudah
+terbukti — buktinya tetap tes Agung (putar video YouTube,
+panel media harus menampilkan judul yang sedang diputar).
