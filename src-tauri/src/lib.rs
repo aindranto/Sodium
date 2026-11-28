@@ -1643,10 +1643,13 @@ pub fn run() {
                 layout_services(&app, &state, window);
                 schedule_gate_check(&app);
             }
-            // Moving between monitors, or a display scale change,
-            // can flip the split gate either way; recheck it
-            // (debounced inside schedule_gate_check).
-            if let WindowEvent::Moved(_) | WindowEvent::ScaleChanged { .. } = event {
+            // Moving between monitors can flip the split gate
+            // either way; recheck it (debounced inside
+            // schedule_gate_check). A display scale change needs
+            // no arm of its own: Tauri 2 has no ScaleChanged
+            // window event — the change surfaces as Resized,
+            // whose branch above already rechecks the gate.
+            if let WindowEvent::Moved(_) = event {
                 schedule_gate_check(&window.app_handle());
             }
         })
