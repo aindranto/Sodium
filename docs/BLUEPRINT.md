@@ -380,3 +380,45 @@ baru, sesuai aturan versi. Desain dikunci Agung sebelum dibangun:
   yang sama dengan switch biasa (zoom didorong dulu, dialog
   tanya izin v0.8.8 tetap terpicu). Zoom tetap per layanan per
   panel. Tidak ada animasi bounds untuk webview native.
+
+## 15. Catatan v0.9.1 (28 Nov 2026)
+
+Patch penyempurnaan split view dari dua laporan Agung saat
+mengetes v0.9.0 di layarnya:
+
+- Pemilih pendamping kompak: tile pemilih sekarang memakai
+  ukuran dan gaya tile pemilih katalog persis seperti
+  sebelumnya, tetapi baris grid tidak lagi meregang mengikuti
+  tinggi panel (align-content: start pada grid pemilih
+  split). Di v0.9.0 tile ketarik jadi kartu raksasa kosong
+  karena grid mengisi seluruh tinggi wilayah kanan dan
+  barisnya stretch; sekarang tile mengumpul di atas dengan
+  ukuran tetap, ruang sisa kosong di bawah, dan panel tetap
+  scroll internal bila layanan banyak.
+- Strip kepala pendamping: panel kanan kini punya strip
+  tipis 32px di tepi atasnya (dirender UI) berisi ikon kecil
+  + nama pendamping dan dua tombol teks: Ganti dan Tutup.
+  Webview pendamping menyusut sebesar strip itu (y +32,
+  tinggi -32, lantai tinggi 100px mengikuti clamp layout
+  yang ada) lewat konstanta COMPANION_STRIP_H di layout pass
+  Rust yang sama; divider dan rasio tidak berubah. Tutup =
+  keluar split sepenuhnya, persis tombol split di bar atas.
+- Ganti pendamping tanpa menutup: tombol Ganti membuka
+  pemilih lagi tepat di wilayah kanan (mode ganti). Selama
+  memilih, pendamping lama DIPARKIR (bukan ditutup, profil
+  tetap hidup) lewat flag companion_picking di AppState +
+  command split_set_picking; pemilih mode ganti punya
+  tombol Batal dan Esc yang menampilkan lagi pendamping
+  yang sama. Memilih layanan lain menggantinya (yang lama
+  disembunyikan, bukan ditutup); memilih layanan yang sama
+  = Batal. Flag direset oleh semua jalur yang mengakhiri
+  pemilihan: split_set_companion, split_swap, split_enter,
+  split_exit, dan runtuhnya gerbang — flag tidak bisa
+  menyandera pendamping di luar layar.
+- Klik-kanan sidebar "Buka di panel kanan" kini juga
+  mengganti pendamping yang sedang terbuka: item tampil
+  untuk layanan aktif mana pun yang bukan layanan utama,
+  sembunyi bila layanan itu sudah jadi pendamping atau
+  gerbang split gagal; handler-nya memang sudah lewat
+  setCompanion, jadi panel kanan berganti tanpa menutup
+  webview pendamping lama.

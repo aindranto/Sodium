@@ -32,6 +32,13 @@ const DIVIDER_W: f64 = 6.0;
 /// pane can be dragged (or restored) below this.
 const MIN_PANE_W: f64 = 400.0;
 
+/// Height of the companion header strip the UI renders at the
+/// top of the right pane in split view (v0.9.1): the companion
+/// webview starts this far below the pane top and is shorter
+/// by the same amount, so the strip (companion name + Ganti /
+/// Tutup buttons) is never covered by the native webview.
+const COMPANION_STRIP_H: f64 = 32.0;
+
 #[derive(Default)]
 struct AppState {
     /// Labels of alive service webviews, most-recently-used first.
@@ -79,6 +86,16 @@ struct AppState {
     /// closes it — and cleared only when the UI picks another
     /// companion (or none) or the webview is destroyed.
     companion: Mutex<Option<String>>,
+    /// True while the UI's companion picker is open in "replace"
+    /// mode over an existing companion (v0.9.1): the layout parks
+    /// the companion webview (parking, not hiding, so its page
+    /// keeps running) while the user picks another service for
+    /// the right pane. Reset by every command that ends the
+    /// pick — choosing or clearing the companion, swapping the
+    /// panes, entering or leaving split — and by a gate
+    /// collapse, so the flag can never strand the companion
+    /// off-screen.
+    companion_picking: Mutex<bool>,
     /// Split ratio: the main pane's share of the width available
     /// to the two panes (0.5 = even). Pushed by the UI (which
     /// persists it) and by the divider drag session; the layout
@@ -225,8 +242,11 @@ fn clamp_split_ratio(ratio: f64, content_w: f64) -> f64 {
 /// (left) pane at the split ratio and the companion — when one
 /// is chosen and alive — the right one, with the divider gap
 /// between them; with no companion the right side stays empty
-/// for the UI's companion picker. Everything else is parked
-/// off-screen at full content size. While a UI panel or the link
+/// for the UI's companion picker. A shown companion sits below
+/// the UI's companion header strip (v0.9.1, COMPANION_STRIP_H);
+/// while the UI is re-picking a companion (companion_picking)
+/// the current one is parked like any inactive service.
+/// Everything else is parked off-screen at full content size. While a UI panel or the link
 /// popup owns the screen (services_hidden / link_open) nothing
 /// is shown, but positions are still updated so the restore is
 /// exact.
@@ -235,6 +255,7 @@ fn layout_services(app: &tauri::AppHandle, state: &AppState, window: &tauri::Win
     let active = state.active.lock().unwrap().clone();
     let companion = state.companion.lock().unwrap().clone();
     let split = *state.split_mode.lock().unwrap() && *state.gate_ok.lock().unwrap();
+    let picking = *state.companion_picking.lock().unwrap();
     let blocked = *state.services_hidden.lock().unwrap() || *state.link_open.lock().unwrap();
     let avail = csize.width - DIVIDER_W;
     let main_w = avail * clamp_split_ratio(*state.split_ratio.lock().unwrap(), csize.width);
@@ -256,9 +277,20 @@ fn layout_services(app: &tauri::AppHandle, state: &AppState, window: &tauri::Win
             } else {
                 let _ = wv.show();
             }
-        } else if split && Some(label) == companion.as_deref() {
-            let _ = wv.set_position(LogicalPosition::new(cpos.x + main_w + DIVIDER_W, cpos.y));
-            let _ = wv.set_size(LogicalSize::new(avail - main_w, csize.height));
+        } else if split && !picking && Some(label) == companion.as_deref() {
+            // Below the UI's companion header strip (v0.9.1):
+            // the strip owns the top COMPANION_STRIP_H px of
+            // the right pane, so the webview starts lower and
+            // is shorter; its height keeps the same 100px
+            // floor service_bounds gives the content area.
+            let _ = wv.set_position(LogicalPosition::new(
+                cpos.x + main_w + DIVIDER_W,
+                cpos.y + COMPANION_STRIP_H,
+            ));
+            let _ = wv.set_size(LogicalSize::new(
+                avail - main_w,
+                (csize.height - COMPANION_STRIP_H).max(100.0),
+            ));
             if blocked {
                 let _ = wv.hide();
             } else {
@@ -322,6 +354,7 @@ fn refresh_split_gate(app: &tauri::AppHandle) {
     }
     if !ok && *state.split_mode.lock().unwrap() {
         *state.split_mode.lock().unwrap() = false;
+        *state.companion_picking.lock().unwrap() = false;
         layout_services(app, &state, &window);
     }
     let _ = app.emit_to(UI_LABEL, "split-gate", ok);
@@ -1176,6 +1209,7 @@ fn set_service_media(state: State<'_, AppState>, id: String, mode: String) {
 fn split_enter(app: tauri::AppHandle, state: State<'_, AppState>, ratio: f64) {
     *state.split_ratio.lock().unwrap() = ratio;
     *state.split_mode.lock().unwrap() = true;
+    *state.companion_picking.lock().unwrap() = false;
     if let Some(window) = state.main_window.lock().unwrap().clone() {
         layout_services(&app, &state, &window);
     }
@@ -1187,6 +1221,7 @@ fn split_enter(app: tauri::AppHandle, state: State<'_, AppState>, ratio: f64) {
 #[tauri::command]
 fn split_exit(app: tauri::AppHandle, state: State<'_, AppState>) {
     *state.split_mode.lock().unwrap() = false;
+    *state.companion_picking.lock().unwrap() = false;
     if let Some(window) = state.main_window.lock().unwrap().clone() {
         layout_services(&app, &state, &window);
     }
@@ -1234,8 +1269,27 @@ async fn split_set_companion(
     } else {
         *state.companion.lock().unwrap() = None;
     }
+    // Choosing (or clearing) the companion ends any replace
+    // pick in progress: the new companion shows under its
+    // header strip, not parked behind the picker.
+    *state.companion_picking.lock().unwrap() = false;
     layout_services(&app, &state, &window);
     Ok(())
+}
+
+/// Enter or leave "replace companion" picking (v0.9.1): while
+/// picking, the layout parks the current companion so the UI's
+/// picker owns the right pane; leaving picking (the UI's Batal
+/// / Esc, or a choice — which goes through split_set_companion
+/// and resets the flag itself) restores it under its header
+/// strip. Pure flag + relayout: nothing is created, closed or
+/// destroyed here.
+#[tauri::command]
+fn split_set_picking(app: tauri::AppHandle, state: State<'_, AppState>, picking: bool) {
+    *state.companion_picking.lock().unwrap() = picking;
+    if let Some(window) = state.main_window.lock().unwrap().clone() {
+        layout_services(&app, &state, &window);
+    }
 }
 
 /// Swap the two split panes: the companion becomes the main
@@ -1249,6 +1303,7 @@ fn split_swap(app: tauri::AppHandle, state: State<'_, AppState>) {
         *state.active.lock().unwrap() = Some(c);
         *state.companion.lock().unwrap() = Some(a);
     }
+    *state.companion_picking.lock().unwrap() = false;
     if let Some(window) = state.main_window.lock().unwrap().clone() {
         layout_services(&app, &state, &window);
     }
@@ -1566,6 +1621,7 @@ pub fn run() {
             split_enter,
             split_exit,
             split_set_companion,
+            split_set_picking,
             split_swap,
             split_set_ratio,
             split_drag_start,

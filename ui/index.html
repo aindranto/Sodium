@@ -54,10 +54,22 @@
 
   <div id="splitDivider" role="separator" aria-orientation="vertical" aria-label="Pembatas panel split — seret, atau fokus lalu pakai tombol panah kiri/kanan untuk mengubah ukuran panel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0" hidden></div>
 
+  <div id="companionBar" hidden>
+    <span id="companionIcon"></span>
+    <span id="companionName"></span>
+    <div class="compBtns">
+      <button id="compChange" class="compBtn" aria-label="Ganti layanan pendamping">Ganti</button>
+      <button id="compClose" class="compBtn" aria-label="Tutup tampilan split">Tutup</button>
+    </div>
+  </div>
+
   <div id="splitPicker" hidden>
     <h2>Pilih layanan pendamping</h2>
-    <p class="muted">Layanan ini tampil di panel kanan, berdampingan dengan layanan utama. Matikan tampilan split dari tombol split di bar atas untuk menutup pemilih ini.</p>
+    <p class="muted" id="splitPickerHint">Layanan ini tampil di panel kanan, berdampingan dengan layanan utama. Matikan tampilan split dari tombol split di bar atas untuk menutup pemilih ini.</p>
     <div id="splitGrid" class="pickerGrid"></div>
+    <div id="splitPickerFoot" class="pickerFoot" hidden>
+      <button id="splitPickCancel" class="btnGhost">Batal</button>
+    </div>
   </div>
 
   <main id="welcome">

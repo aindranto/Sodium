@@ -216,8 +216,8 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 .swatch.sel{outline:2px solid var(--accent);outline-offset:2px}
 .colorRow{margin-top:12px;font-size:13px;color:var(--muted)}
 
-.svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgAct,.mgFormBtns button,.zoomCtl button,.linkBtns button,#addBtn,#manageBtn,.swatch,.glyphBtn,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
-.svc:active,.tile:active,.toolBtn:active,#addBtn:active,#manageBtn:active,.zoomCtl button:active,.linkBtns button:active,.panel button:active,.pickerFoot button:active,.mgAct:active,.mgFormBtns button:active,.customRow button:active{transform:scale(.98)}
+.svc,.tile,.toolBtn,.btnGhost,.btnPrimary,.btnDanger,.mgAct,.mgFormBtns button,.zoomCtl button,.linkBtns button,.compBtn,#addBtn,#manageBtn,.swatch,.glyphBtn,.panel button,.pickerFoot button,.customRow button,.imgRow button{transition:background-color .12s ease,color .12s ease,border-color .12s ease,transform .12s ease}
+.svc:active,.tile:active,.toolBtn:active,.compBtn:active,#addBtn:active,#manageBtn:active,.zoomCtl button:active,.linkBtns button:active,.panel button:active,.pickerFoot button:active,.mgAct:active,.mgFormBtns button:active,.customRow button:active{transform:scale(.98)}
 /* Exit states (v0.8.6): closePanels() adds .closing for one short
    beat before [hidden] lands, so dismissal is faster than entry
    (110ms vs 160-180ms) instead of an instant vanish. These rules
@@ -313,4 +313,28 @@ body.showNames .svcImg{width:var(--svc-sm);height:var(--svc-sm);border-radius:8p
 #splitPicker{position:fixed;top:44px;right:0;bottom:0;background:var(--bg);z-index:7;padding:20px;display:flex;flex-direction:column}
 #splitPicker[hidden]{display:none}
 #splitPicker h2{margin:0 0 6px;font-size:18px;font-weight:600}
-#splitPicker .pickerGrid{margin:12px 0 0}
+/* Compact tiles (v0.9.1): same tile as the catalog picker, but
+   the grid rows must size to their content and pack at the
+   top — the shared .pickerGrid fills the pane's height, and
+   without align-content:start the rows stretch to fill it,
+   producing giant empty cards. Leftover space stays below
+   the tiles; the grid still scrolls internally when there
+   are more services than fit. */
+#splitPicker .pickerGrid{margin:12px 0 0;align-content:start}
+#splitPickerFoot{margin-top:12px}
+#splitPickerFoot[hidden]{display:none}
+
+/* Companion header strip (v0.9.1): a slim bar rendered by
+   this UI in the top 32px of the right pane (Rust shrinks
+   the companion webview by COMPANION_STRIP_H to make room).
+   Left edge is set from JS to match the layout's main-pane
+   width, exactly like the picker. It gives the companion a
+   visible identity and the two controls split view lacked:
+   Ganti (re-pick the companion) and Tutup (leave split). */
+#companionBar{position:fixed;top:44px;right:0;height:32px;background:var(--chrome);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;z-index:7}
+#companionBar[hidden]{display:none}
+#companionIcon{width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none;font-size:11px;font-weight:700}
+#companionName{flex:1;min-width:0;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.compBtns{display:flex;gap:4px;flex:none}
+.compBtn{background:transparent;border:1px solid transparent;border-radius:7px;color:var(--muted);font:inherit;font-size:12px;font-weight:600;padding:4px 9px;cursor:pointer}
+.compBtn:hover{background:var(--raised);color:var(--text)}

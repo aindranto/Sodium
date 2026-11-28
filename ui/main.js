@@ -196,6 +196,9 @@ loadGroups();
 // Split view (v0.9.0): two services side by side — the main
 // (left) pane, which the sidebar / reload / bell keep
 // controlling exactly as before, and a companion (right) pane.
+// v0.9.1 adds the companion header strip (name + Ganti /
+// Tutup) over the right pane and replace-picking: Ganti
+// re-opens the picker there while Rust parks the companion.
 // Rust owns the native layout (bounds, the double gate, the
 // cursor-polled divider drag); this side owns the choices: the
 // ratio and the companion id are persisted here (localStorage +
@@ -211,6 +214,18 @@ let splitOn = false;
 let splitGateOk = false;
 let splitRatio = 0.5;
 let companionId = null;
+// Replace-picking (v0.9.1): true while the picker is open in
+// the right pane to CHANGE an existing companion. The current
+// companion stays chosen (and persisted) the whole time; Rust
+// parks its webview behind the picker (split_set_picking), so
+// Batal / Esc brings the exact same view back, and picking
+// another service simply replaces it.
+let splitPicking = false;
+// What the companion header strip last painted (companion id
+// + name), so layoutSplitChrome only rebuilds its icon when
+// the companion actually changed; render() clears it so
+// renames and icon edits repaint too.
+let barRenderedKey = null;
 function reloadSplitPrefs() {
   const r = parseFloat(localStorage.getItem("sodium.splitRatio") || "0.5");
   splitRatio = Number.isFinite(r) && r > 0 && r < 1 ? r : 0.5;
@@ -238,23 +253,64 @@ function refreshSplitBtn() {
   btn.setAttribute("aria-pressed", splitOn ? "true" : "false");
   btn.title = splitOn ? "Matikan tampilan split" : "Tampilan split (dua layanan berdampingan)";
 }
-// Position the divider strip and the companion picker over the
-// content area. Called on every split state change and on
-// window resize; cheap style writes only, no layout reads.
+// Position the divider strip, the companion picker and the
+// companion header strip over the content area. Called on
+// every split state change and on window resize; cheap style
+// writes only, no layout reads.
 function layoutSplitChrome() {
   const div = el("splitDivider");
   const picker = el("splitPicker");
-  if (!splitOn) { div.hidden = true; picker.hidden = true; return; }
+  const bar = el("companionBar");
+  if (!splitOn) { div.hidden = true; picker.hidden = true; bar.hidden = true; return; }
   const mainW = splitMainW();
   div.hidden = false;
   div.style.left = (76 + mainW) + "px";
   const avail = Math.max(1, window.innerWidth - 76 - SPLIT_DIVIDER_W);
   div.setAttribute("aria-valuenow", String(Math.round(mainW / avail * 100)));
-  if (companionId) {
+  const rightLeft = 76 + mainW + SPLIT_DIVIDER_W;
+  if (companionId && !splitPicking) {
+    // Companion on display: its header strip owns the top of
+    // the right pane (Rust shrinks the webview by the same
+    // 32px to make room), the picker hides.
     picker.hidden = true;
+    bar.hidden = false;
+    bar.style.left = rightLeft + "px";
+    const s = services.find(x => x.id === companionId);
+    const key = companionId + "|" + (s ? s.name : "");
+    if (barRenderedKey !== key) { barRenderedKey = key; renderCompanionBar(); }
   } else {
+    // No companion yet, or re-picking one: the picker fills
+    // the right pane and the strip hides. The Batal footer
+    // and the hint text only make sense in replace mode.
+    bar.hidden = true;
     picker.hidden = false;
-    picker.style.left = (76 + mainW + SPLIT_DIVIDER_W) + "px";
+    picker.style.left = rightLeft + "px";
+    el("splitPickerFoot").hidden = !splitPicking;
+    el("splitPickerHint").textContent = splitPicking
+      ? "Pilih layanan lain untuk mengganti pendamping di panel kanan. Batal (atau tombol Esc) menampilkan lagi pendamping yang sekarang."
+      : "Layanan ini tampil di panel kanan, berdampingan dengan layanan utama. Matikan tampilan split dari tombol split di bar atas untuk menutup pemilih ini.";
+  }
+}
+// Paint the companion header strip: the companion service's
+// small icon and name (same icon-building pattern as the
+// picker tiles). Called by layoutSplitChrome only when the
+// companion or its name changed.
+function renderCompanionBar() {
+  const s = services.find(x => x.id === companionId);
+  const ic = el("companionIcon");
+  ic.innerHTML = "";
+  ic.style.background = "";
+  el("companionName").textContent = s ? s.name : "";
+  if (!s) return;
+  if (s.img) {
+    const im = document.createElement("img");
+    im.className = "svcImg"; im.src = s.img; im.alt = "";
+    const f = imgFilter(s); if (f) im.style.filter = f;
+    im.onerror = () => { im.replaceWith(iconVisual(s, 13)); if (s.color) ic.style.background = s.color; };
+    ic.appendChild(im);
+  } else {
+    if (s.color) ic.style.background = s.color;
+    ic.appendChild(iconVisual(s, 13));
   }
 }
 function renderSplitPicker() {
@@ -282,7 +338,12 @@ function renderSplitPicker() {
     const nm = document.createElement("span");
     nm.className = "tileName"; nm.textContent = s.name;
     t.append(ic, nm);
-    t.addEventListener("click", () => setCompanion(s));
+    t.addEventListener("click", () => {
+      // In replace mode, picking the service that already is
+      // the companion changes nothing: it is the Batal path.
+      if (splitPicking && s.id === companionId) { cancelSplitPick(); return; }
+      setCompanion(s);
+    });
     grid.appendChild(t);
   }
   if (!grid.children.length) {
@@ -295,6 +356,7 @@ function renderSplitPicker() {
 async function enterSplit(restoreCompanion = true) {
   if (!activeId || !splitGateOk || splitOn) return;
   splitOn = true;
+  splitPicking = false;
   refreshSplitBtn();
   try { await invoke("split_enter", { ratio: splitRatio }); } catch { /* gate still rules in Rust */ }
   if (restoreCompanion && companionId) {
@@ -312,6 +374,7 @@ async function enterSplit(restoreCompanion = true) {
 async function exitSplit() {
   if (!splitOn) return;
   splitOn = false;
+  splitPicking = false;
   refreshSplitBtn();
   layoutSplitChrome();
   try { await invoke("split_exit"); } catch { /* nothing to undo */ }
@@ -321,6 +384,11 @@ async function exitSplit() {
 // permission handlers from Rust's create path), so the
 // first-open permission ask (v0.8.8) fires for it too.
 async function setCompanion(s) {
+  // A choice ends any replace pick in progress (Rust's
+  // split_set_companion resets its picking flag too): the old
+  // companion is hidden by the layout, never closed, and the
+  // new one takes the right pane under its header strip.
+  splitPicking = false;
   companionId = s.id;
   saveSplitPrefs();
   try {
@@ -331,11 +399,32 @@ async function setCompanion(s) {
   if (!s.permAsked) openPermDialog(s);
 }
 async function clearCompanion() {
+  splitPicking = false;
   companionId = null;
   saveSplitPrefs();
   try { await invoke("split_set_companion", { id: null, url: null }); } catch { /* already gone */ }
   layoutSplitChrome();
   if (splitOn) renderSplitPicker();
+}
+// "Ganti" on the companion header strip (v0.9.1): re-open the
+// picker in the right pane to choose a different companion.
+// The current companion is PARKED by Rust (split_set_picking),
+// never closed, so cancelling brings the exact same view
+// back; choosing another service replaces it via setCompanion.
+async function startReplacePick() {
+  if (!splitOn || !companionId || splitPicking) return;
+  splitPicking = true;
+  renderSplitPicker();
+  layoutSplitChrome();
+  try { await invoke("split_set_picking", { picking: true }); } catch { /* companion stays shown */ }
+}
+// Batal / Esc in replace mode: close the picker and show the
+// same companion again under its strip.
+async function cancelSplitPick() {
+  if (!splitPicking) return;
+  splitPicking = false;
+  layoutSplitChrome();
+  try { await invoke("split_set_picking", { picking: false }); } catch { /* already restored */ }
 }
 
 // Top-bar bell (v0.8.5): a second door to the same per-service
@@ -564,7 +653,11 @@ async function openCtx(s) {
   // "Buka di panel kanan" only makes sense for a service that
   // can actually open and is not already one of the two panes,
   // and only while the split gate passes (the button that
-  // reveals the feature is hidden otherwise).
+  // reveals the feature is hidden otherwise). With split
+  // already on, choosing it for another service REPLACES the
+  // current companion (v0.9.1) — the click handler below goes
+  // through setCompanion, which swaps the right pane without
+  // closing the old companion's webview.
   el("ctxSplit").hidden = !splitGateOk || disabled.has(s.id) || s.id === activeId || (splitOn && s.id === companionId);
   el("ctxAdblock").hidden = !isYouTubeService(s);
   await openPanel(ctxPanel);
@@ -706,6 +799,10 @@ function render() {
   refreshNotifBtn();
   refreshSplitBtn();
   if (splitOn && !companionId) renderSplitPicker();
+  // Force the companion strip to repaint below: a rename or
+  // icon edit must reach it even though the companion id did
+  // not change.
+  barRenderedKey = null;
   layoutSplitChrome();
 }
 
@@ -749,6 +846,7 @@ async function switchTo(s) {
   if (splitOn && companionId && activeId && s.id === companionId && s.id !== activeId) {
     const prevMainId = activeId;
     try { await invoke("split_swap"); } catch { return; }
+    splitPicking = false;
     companionId = prevMainId;
     saveSplitPrefs();
     activeId = s.id;
@@ -2144,6 +2242,13 @@ el("splitBtn").addEventListener("click", async () => {
   if (splitOn) await exitSplit();
   else await enterSplit();
 });
+// Companion header strip controls (v0.9.1): Ganti re-opens
+// the picker over the parked companion, Tutup leaves split
+// exactly like the top-bar toggle, and the picker's Batal
+// returns to the companion that is already open.
+el("compChange").addEventListener("click", startReplacePick);
+el("compClose").addEventListener("click", async () => { await exitSplit(); });
+el("splitPickCancel").addEventListener("click", cancelSplitPick);
 const splitDivider = el("splitDivider");
 splitDivider.addEventListener("pointerdown", (e) => {
   if (e.button !== 0 || !splitOn) return;
@@ -2192,6 +2297,7 @@ window.__TAURI__.event.listen("split-gate", (e) => {
     // re-entering split (once the gate passes again) brings
     // the same companion back.
     splitOn = false;
+    splitPicking = false;
     layoutSplitChrome();
   }
   refreshSplitBtn();
@@ -2737,6 +2843,7 @@ async function applyImport(snap) {
   // and losing the main service collapses split.
   if (companionId && (!services.some(s => s.id === companionId) || companionId === activeId)) {
     companionId = null;
+    splitPicking = false;
     saveSplitPrefs();
     invoke("split_set_companion", { id: null, url: null }).catch(() => {});
   }
@@ -2759,6 +2866,9 @@ window.addEventListener("keydown", async (e) => {
     return;
   }
   if (e.key === "Escape") {
+    // Replace-picking has its own Esc: back to the companion
+    // that is parked behind the picker (v0.9.1).
+    if (splitPicking) { await cancelSplitPick(); return; }
     if (!groupMenu.hidden) { hideGroupMenu(); return; }
     if (linkPopupOpen) { await closeLinkPopup(); return; }
     const open = allPanels.find(p => !p.hidden);
